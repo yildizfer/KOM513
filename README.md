@@ -205,7 +205,7 @@ $$ \begin{equation}
 The second reward function is defined as:
 
 $$ \begin{equation}
-   r_2 = \left\{\begin{matrix}
+   r_2 = \left\\lbrace\begin{matrix}
 1 & d_u < d_{u-1}\\ 
 -0.5 & d_u =  d_{u-1}\\
 -1 & d_u >  d_{u-1}
@@ -222,7 +222,7 @@ r_3 = -0.7\times d_u
 The final reward is:
 
 $$ \begin{equation} 
-r_4 = \left\{\begin{matrix}
+r_4 = \left\\lbrace\begin{matrix}
  200 & d_u \leq 0.025 \\ 
  150 & d_u \leq 0.05 \\ 
  100 & d_u \leq 0.1 \\ 
