@@ -4,7 +4,7 @@
     
 This forward_velocity_kinematics.py file contains all necessary kinematics functions for the project
 '''
-
+#https://www.sciencedirect.com/science/article/pii/S2773186324000082
 import numpy as np
 
 # %% Function three_section_planar_robot
