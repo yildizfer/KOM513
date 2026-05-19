@@ -7,7 +7,7 @@ dir_path = os.path.dirname(os.path.realpath(__file__))
 file_path = os.path.join(dir_path, 'circles.txt')
 
 import numpy as np
-from gym import spaces
+from gymnasium import spaces
 
 class AmorphousSpace(spaces.Space):
     """Custom space class for representing an amorphous observation space."""

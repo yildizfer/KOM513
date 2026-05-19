@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import ConvexHull
 import matplotlib.path as mpltPath
-from gym import spaces
+from gymnasium import spaces
 
 
 class PolygonSpace(spaces.Space):

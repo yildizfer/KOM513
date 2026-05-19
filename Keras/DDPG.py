@@ -7,7 +7,8 @@ import os
 import yaml
 # import gym
 import tensorflow as tf
-print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+tf.config.set_soft_device_placement(True)
+print("Num CPUs Available: ", len(tf.config.list_physical_devices('CPU')))
 from tensorflow.keras import layers
 import pickle
 import numpy as np
