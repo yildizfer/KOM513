@@ -72,7 +72,7 @@ def three_section_spatial_robot(Kappa, Phi, L): # TODO -> Add if else to figure 
     return T
 
 # %% Function three_section_planar_robot
-def jacobian_matrix(delta_kappa, kappa1, kappa2, kappa3, l): # TODO -> figure out singularity
+def jacobian_matrix(delta_kappa, delta_phi, Kappa, Phi, L): # TODO -> figure out singularity
     '''
     * Calculation of jacobian matrix by numerical differentation    
 
@@ -80,31 +80,56 @@ def jacobian_matrix(delta_kappa, kappa1, kappa2, kappa3, l): # TODO -> figure ou
     ----------
     delta_kappa : float
         parameter for numerical differentation. Commonly 0.1
-    kappa1 : float
-        curvature value for section 1.
-    kappa2 : float
-        curvature value for section 2.
-    kappa3 : float
-        curvature value for section 3.
+    delta_phi : float
+        parameter for numerical differentation. Commonly 0.1
+    Kappa : list
+        curvature values for all sections.
+    Phi : list
+        bending angles for all sections
     l : list
         trunk length contains all sections
 
     Returns
     -------
-    J : Numpy array with the shape of (2,3)
+    J : Numpy array with the shape of (6,6)
         Jacobian Matrix
 
     '''
-    
-    J11 = (three_section_planar_robot(kappa1+delta_kappa,kappa2,kappa3,l)[0,3] - three_section_planar_robot(kappa1-delta_kappa,kappa2,kappa3,l))[0,3] / (2*delta_kappa);
-    J12 = (three_section_planar_robot(kappa1,kappa2+delta_kappa,kappa3,l)[0,3] - three_section_planar_robot(kappa1,kappa2-delta_kappa,kappa3,l))[0,3] / (2*delta_kappa);
-    J13 = (three_section_planar_robot(kappa1,kappa2,kappa3+delta_kappa,l)[0,3] - three_section_planar_robot(kappa1,kappa2,kappa3-delta_kappa,l))[0,3] / (2*delta_kappa);
-    J21 = (three_section_planar_robot(kappa1+delta_kappa,kappa2,kappa3,l)[1,3] - three_section_planar_robot(kappa1-delta_kappa,kappa2,kappa3,l))[1,3] / (2*delta_kappa);
-    J22 = (three_section_planar_robot(kappa1,kappa2+delta_kappa,kappa3,l)[1,3] - three_section_planar_robot(kappa1,kappa2-delta_kappa,kappa3,l))[1,3] / (2*delta_kappa);
-    J23 = (three_section_planar_robot(kappa1,kappa2,kappa3+delta_kappa,l)[1,3] - three_section_planar_robot(kappa1,kappa2,kappa3-delta_kappa,l))[1,3] / (2*delta_kappa);
-    
-    J = np.array([J11,J12,J13,J21,J22,J23]);
-    J = np.reshape(J,(2,3))
+    No_q = 2*len(L)
+    J = np.zeros((6, No_q))
+
+    for i in range(No_q):
+            
+        Kappa_p = Kappa.copy() #positive perturbation for kappa
+        Phi_p = Phi.copy() #positive perturbation for phi
+
+        Kappa_n = Kappa.copy() #negative perturbation for kappa
+        Phi_n = Phi.copy() #negative perturbation for phi
+
+        idx = i//2
+
+        if i%2 == 0:
+            Kappa_p[idx] += delta_kappa
+            Kappa_n[idx] -= delta_kappa
+            epsilon = delta_kappa
+
+        else:
+            Phi_p[idx] += delta_phi
+            Phi_n[idx] -= delta_phi
+            epsilon = delta_phi
+
+        T_p = three_section_spatial_robot(Kappa_p, Phi_p, L)
+        T_n = three_section_spatial_robot(Kappa_n, Phi_n, L)
+
+        Ji_p = (T_p[0:3, 3] - T_n[0:3, 3])/(2*epsilon)
+        
+        R_p = T_p[0:3, 0:3]
+        R_n = T_n[0:3, 0:3]
+        R_err = R_p @ R_n.T
+        Ji_R = np.array([R_err[2, 1] - R_err[1, 2], R_err[0, 2] - R_err[2, 0], R_err[1, 0] - R_err[0, 1]])/(2*epsilon)        
+        
+        J[0:3, i] = Ji_p
+        J[3:6, i] = Ji_R
     
     return J
 
@@ -177,4 +202,6 @@ def coupletransformations(T,T_tip):
 
 
 T = three_section_spatial_robot([2.012, 1.741, 1.01], [0, 0, 0], [0.15, 0.15, 0.15])
+J = jacobian_matrix(0.1, 0.01, [2.012, 1.741, 1.01], [30, 10, -20], [0.15, 0.15, 0.15])
 print(T)
+print(J)
