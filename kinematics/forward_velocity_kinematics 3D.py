@@ -8,7 +8,7 @@ This forward_velocity_kinematics.py file contains all necessary kinematics funct
 import numpy as np
 
 # %% Function three_section_planar_robot
-def three_section_spatial_robot(Kappa, Phi, L): # TODO -> Add if else to figure out when any kappa = 0
+def FK_pcc(Kappa, Phi, L): # TODO -> Add if else to figure out when any kappa = 0
     '''
     * Homogeneous transformation matrix 
     * Mapping from configuration parameters to task space for the tip of the continuum robot
@@ -72,7 +72,7 @@ def three_section_spatial_robot(Kappa, Phi, L): # TODO -> Add if else to figure 
     return T
 
 # %% Function three_section_planar_robot
-def jacobian_matrix(delta_kappa, delta_phi, Kappa, Phi, L): # TODO -> figure out singularity
+def Jacobian_pcc(delta_kappa, delta_phi, Kappa, Phi, L): # TODO -> figure out singularity
     '''
     * Calculation of jacobian matrix by numerical differentation    
 
@@ -118,8 +118,8 @@ def jacobian_matrix(delta_kappa, delta_phi, Kappa, Phi, L): # TODO -> figure out
             Phi_n[idx] -= delta_phi
             epsilon = delta_phi
 
-        T_p = three_section_spatial_robot(Kappa_p, Phi_p, L)
-        T_n = three_section_spatial_robot(Kappa_n, Phi_n, L)
+        T_p = FK_pcc(Kappa_p, Phi_p, L)
+        T_n = FK_pcc(Kappa_n, Phi_n, L)
 
         Ji_p = (T_p[0:3, 3] - T_n[0:3, 3])/(2*epsilon)
         
@@ -201,7 +201,8 @@ def coupletransformations(T,T_tip):
     return Tc
 
 
-T = three_section_spatial_robot([2.012, 1.741, 1.01], [0, 0, 0], [0.15, 0.15, 0.15])
-J = jacobian_matrix(0.1, 0.01, [2.012, 1.741, 1.01], [30, 10, -20], [0.15, 0.15, 0.15])
+#T = three_section_spatial_robot([2.012, 1.741, 1.01], [0, 0, 0], [0.15, 0.15, 0.15])
+T = FK_pcc([2.012, 1.741], [0, 0], [0.15, 0.15])
+#J = Jacobian_pcc(0.1, 0.01, [2.012, 1.741, 1.01], [30, 10, -20], [0.15, 0.15, 0.15])
 print(T)
-print(J)
+#print(J)
