@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt # quick "plot" library
 from matplotlib.animation import FuncAnimation # make animation
 
 # My own libraries
-from kinematics.forward_velocity_kinematics import three_section_planar_robot, jacobian_matrix # the velocity kinematics
-from kinematics.forward_velocity_kinematics import trans_mat_cc, coupletransformations # forward kinematics
+from forward_velocity_kinematics_3D import FK_pcc, Jacobian_pcc # 3D kinematics
+from kinematics.forward_velocity_kinematics import trans_mat_cc, coupletransformations # legacy 2D for rendering
 from AmorphousSpace import AmorphousSpace
 
 class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standarts
@@ -33,21 +33,26 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
     * -> Hannan, M. W. & Walker, I. D. Kinematics and the implementation of an elephant’s trunk manipulator and other 
     continuum style robots. J. Robot. Syst. 20, 45–63 (2003).
    
-    -  `x-y`: cartesian coordinates of the robot's tip point in meters.
+     -  `x-y-z`: cartesian coordinates of the robot's tip point in meters.
     - `kappa` : curvatures in 1/m.
+    - `phi` : planar bending angles in radians.
     - `kappa_dot` : derivative of curvatures in 1/m/s.
+    - `phi_dot` : derivative of planar bending angles in rad/s.
 
     ### Action Space
-    The action is a `ndarray` with shape `(3,)` representing the derivative of each segment's curvature.
-    
+    The action is a `ndarray` with shape `(6,)` representing the derivatives of each segment's curvature and planar bending angle.
+
     | Num | Action  | Min  | Max |
     |-----|---------|------|-----|
     | 0   | K_dot_1 | -1.0 | 1.0 |
     | 1   | K_dot_2 | -1.0 | 1.0 |
     | 2   | K_dot_3 | -1.0 | 1.0 |
+    | 3   | P_dot_1 | -1.0 | 1.0 |
+    | 4   | P_dot_2 | -1.0 | 1.0 |
+    | 5   | P_dot_3 | -1.0 | 1.0 |
 
     ### Observation Space
-    The observation is a `ndarray` with shape `(4,)` representing the x-y coordinates of the robot's starting and end points.
+    The observation is a `ndarray` with shape `(6,)` representing the x-y-z coordinates of the robot's starting and end points.
     
     - Space is created named `AmorphousSpace` which is custom observation & action spaces that inherit from the gym.Space class
         
@@ -73,7 +78,9 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         # self.delta_kappa = delta_kappa
 
         self.delta_kappa = 0.001     # necessary for the numerical differentiation
+        self.delta_phi = 0.001       # necessary for the numerical differentiation of phi
         self.kappa_dot_max = 1.000  # max derivative of curvature
+        self.phi_dot_max = 1.000    # max derivative of planar bending angle
         self.kappa_max = 16.00      # max curvature for the robot
         self.kappa_min = -4.00      # min curvature for the robot
         # self.q_goal = 0 # case 3 Goal Position
@@ -90,45 +97,53 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         # self.stop3 = 0 # variable to make robot not move after exeeding max, min kappa3 value
         self.l = [l1, l2, l3]       # stores the length of each segment of the robot
         self.dt =  5e-2             # sample sizes
-        self.J = np.zeros((2,3))    # initializes the Jacobian matrix  
+        self.J = np.zeros((6,6))    # initializes the Jacobian matrix (6x6 for 3D)  
         self.error = 0              # initializes the error
         self.previous_error = 0     # initializes the previous error
         self.start_kappa = [0,0,0]  # initializes the start kappas for the three segments
+        self.start_phi = [0,0,0]    # initializes the start phis for the three segments
         self.time = 0               # to count the time of the simulation
         self.overshoot0 = 0
         self.overshoot1 = 0
-        self.position_dic = {'Section1': {'x':[],'y':[]}, 'Section2': {'x':[],'y':[]}, 'Section3': {'x':[],'y':[]}}
+        self.position_dic = {'Section1': {'x':[],'y':[],'z':[]}, 'Section2': {'x':[],'y':[],'z':[]}, 'Section3': {'x':[],'y':[],'z':[]}}
         # Define the observation and action space from OpenAI Gym
-        high = np.array([0.2, 0.3, 0.16, 0.3], dtype=np.float32) # [0.16, 0.3, 0.16, 0.3]
-        low = np.array([-0.3, -0.15, -0.27, -0.11], dtype=np.float32) # [-0.27, -0.11, -0.27, -0.11]
-        self.action_space = spaces.Box(low=-1*self.kappa_dot_max, high=self.kappa_dot_max,shape=(3,), dtype=np.float32)
-        ########
-        
-        # TODO: Add better environment observation space (more circle or algorithm that make automatically)
+        # 6D observation space: [x, y, z, goal_x, goal_y, goal_z]
+        high = np.array([0.2, 0.3, 0.3, 0.2, 0.3, 0.3], dtype=np.float32)
+        low = np.array([-0.3, -0.15, -0.3, -0.3, -0.15, -0.3], dtype=np.float32)
+        # 6D action space: [kappa_dot_1, kappa_dot_2, kappa_dot_3, phi_dot_1, phi_dot_2, phi_dot_3]
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
         self.observation_space = AmorphousSpace()
+
+        # Initialize joint variables (will be set properly in reset)
+        self.kappa1 = 0.0
+        self.kappa2 = 0.0
+        self.kappa3 = 0.0
+        self.phi1 = 0.0
+        self.phi2 = 0.0
+        self.phi3 = 0.0
+        self.Kappa = [self.kappa1, self.kappa2, self.kappa3]
+        self.Phi = [self.phi1, self.phi2, self.phi3]
 
     def step(self, u, reward_function:str = 'step_minus_euclidean_square'):
 
-        x,y,goal_x,goal_y = self.state # Get the current state as x,y,goal_x,goal_y
+        x, y, z, goal_x, goal_y, goal_z = self.state # Get the current 6D state
 
         # global variables to be used in the reward function
-        global new_x 
+        global new_x
         global new_y
+        global new_z
         global new_goal_x
         global new_goal_y
-
-        # delta_kappa = self.delta_kappa
-        # l = self.l
-        # kappa1 = self.kappa1
-        # kappa2 = self.kappa2
-        # kappa3 = self.kappa3
+        global new_goal_z
 
         dt =  self.dt # Time step
 
-        u = np.clip(u, -self.kappa_dot_max, self.kappa_dot_max) # Clip the input to the range of the -1,1
+        # Clip action: first 3 dims for kappa_dot, next 3 for phi_dot
+        u[0:3] = np.clip(u[0:3], -self.kappa_dot_max, self.kappa_dot_max)
+        u[3:6] = np.clip(u[3:6], -self.phi_dot_max, self.phi_dot_max)
 
         if reward_function == 'step_error_comparison':
-            self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)) # Calculate the error squared
+            self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)+((goal_z-z)**2)) # Calculate 3D distance
 
             if self.error < self.previous_error:
                 self.costs = 1.00
@@ -145,7 +160,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
                 # print("=========================POSITIVE MOVE=========================")
         
         elif reward_function == 'step_minus_euclidean_square':
-            self.error = ((goal_x-x)**2)+((goal_y-y)**2) # Calculate the error squared
+            self.error = ((goal_x-x)**2)+((goal_y-y)**2)+((goal_z-z)**2) # Calculate 3D squared distance
             self.costs = self.error # Set the cost (reward) to the error squared
             # Just to show if the robot is moving along the goal or not
             if self.error < self.previous_error:
@@ -174,8 +189,8 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         # self.previous_error = self.error
 
         elif reward_function == 'step_minus_weighted_euclidean':
-            
-            self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)) # Calculate the error squared
+
+            self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)+((goal_z-z)**2)) # Calculate 3D distance
             self.costs = 0.7 * self.error # Set the cost (reward) to the error squared
             if self.error <= 0.01: # give extra reward if the robot is close to the goal
                 self.costs -= 0.07
@@ -187,8 +202,8 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
                 # print("=========================POSITIVE MOVE=========================")
         
         elif reward_function == 'step_distance_based':
-            
-            self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)) # Calculate the error squared
+
+            self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)+((goal_z-z)**2)) # Calculate 3D distance
 
             # Just to show if the robot is moving along the goal or not
             if self.error < self.previous_error:
@@ -224,126 +239,57 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
             else:
                 done = False
         
-        # This if and else statement is to avoid the robot to move if the kappas are at the limits
-        if self.stop == 0:
-            self.J = jacobian_matrix(self.delta_kappa, self.kappa1, self.kappa2, self.kappa3, self.l)
-            x_vel = self.J @ u
-            state_update = x_vel * dt
-            new_x = x + state_update[0]
-            new_y = y + state_update[1]
-            
-        elif self.stop == 1:
-            self.J = jacobian_matrix(self.delta_kappa, self.kappa1, self.kappa2, self.kappa3, self.l)
-            x_vel = self.J @ np.append([0],u[1:3])
-            state_update = x_vel * dt
-            new_x = x + state_update[0]
-            new_y = y + state_update[1]
+        # Compute velocity using 3D Jacobian and integrate state
+        self.Kappa = [self.kappa1, self.kappa2, self.kappa3]
+        self.Phi = [self.phi1, self.phi2, self.phi3]
+        self.J = Jacobian_pcc(self.delta_kappa, self.delta_phi, self.Kappa, self.Phi, self.l)
+
+        # 6D input: first 3 are kappa_dot, next 3 are phi_dot
+        # Jacobian maps joint velocities to end-effector velocities (linear + angular)
+        x_vel = self.J @ u  # 6D velocity: [vx, vy, vz, wx, wy, wz]
+        state_update = x_vel[0:3] * dt  # Extract position velocity and integrate
+
+        new_x = x + state_update[0]
+        new_y = y + state_update[1]
+        new_z = z + state_update[2]
         
-        elif self.stop == 2:
-            self.J = jacobian_matrix(self.delta_kappa, self.kappa1, self.kappa2, self.kappa3, self.l)
-            x_vel = self.J @ np.append(np.append(u[0],[0]),u[2])
-            state_update = x_vel * dt
-            new_x = x + state_update[0]
-            new_y = y + state_update[1]
-            
-        elif self.stop == 3:
-            self.J = jacobian_matrix(self.delta_kappa, self.kappa1, self.kappa2, self.kappa3, self.l)
-            x_vel = self.J @ np.append(u[0:2],[0])
-            state_update = x_vel * dt
-            new_x = x + state_update[0]
-            new_y = y + state_update[1]
-            
-        elif self.stop == 4:
-            self.J = jacobian_matrix(self.delta_kappa, self.kappa1, self.kappa2, self.kappa3, self.l)
-            x_vel = self.J @ np.append([0,0],u[2])
-            state_update = x_vel * dt
-            new_x = x + state_update[0]
-            new_y = y + state_update[1]
-        
-        elif self.stop == 5:
-            self.J = jacobian_matrix(self.delta_kappa, self.kappa1, self.kappa2, self.kappa3, self.l)
-            x_vel = self.J @  np.append(np.append([0],u[1]),[0])
-            state_update = x_vel * dt
-            new_x = x + state_update[0]
-            new_y = y + state_update[1]
-        
-        elif self.stop == 6:
-            self.J = jacobian_matrix(self.delta_kappa, self.kappa1, self.kappa2, self.kappa3, self.l)
-            x_vel = self.J @ np.append(u[0],[0,0])
-            state_update = x_vel * dt
-            new_x = x + state_update[0]
-            new_y = y + state_update[1]
-            
-        elif self.stop == 7:
-            pass
-            # # UNCOMMENT HERE!!!!!!!
-            # print("Robot is not moving")
-            # time.sleep(1)
-        
-        # Update the curvatures
-        self.kappa1 += u[0] * dt 
+        # Update the joint variables
+        self.kappa1 += u[0] * dt
         self.kappa2 += u[1] * dt
         self.kappa3 += u[2] * dt
+        self.phi1 += u[3] * dt
+        self.phi2 += u[4] * dt
+        self.phi3 += u[5] * dt
 
         # TODO -> Solve the situation when kappas are zero in Homogenous matrix
-        # Maybe when it is Zero try except and Raise an error
+        # Clip kappas to limits
         self.kappa1 = np.clip(self.kappa1, self.kappa_min, self.kappa_max)
         self.kappa2 = np.clip(self.kappa2, self.kappa_min, self.kappa_max)
         self.kappa3 = np.clip(self.kappa3, self.kappa_min, self.kappa_max)
 
-        # To check which curvature value are at the limits
-        self.stop = 0
-        # self.stop1 = 0
-        # self.stop2 = 0
-        # self.stop3 = 0
-        k1 = self.kappa1 <= self.kappa_min or self.kappa1 >= self.kappa_max
-        k2 = self.kappa2 <= self.kappa_min or self.kappa2 >= self.kappa_max
-        k3 = self.kappa3 <= self.kappa_min or self.kappa3 >= self.kappa_max
+        # Clip phis to reasonable range [-pi, pi]
+        self.phi1 = np.arctan2(np.sin(self.phi1), np.cos(self.phi1))
+        self.phi2 = np.arctan2(np.sin(self.phi2), np.cos(self.phi2))
+        self.phi3 = np.arctan2(np.sin(self.phi3), np.cos(self.phi3))
         
-        if k1:
-            self.stop = 1
-            
-        elif k2:
-            self.stop = 2
-            
-        elif k3:
-            self.stop = 3
-        
-        if k1 and k2:
-            self.stop = 4
-        
-        elif k1 and k3:
-            self.stop = 5
-        
-        elif k2 and k3:
-            self.stop = 6
-            
-        if k1 and k2 and k3:
-            self.stop = 7
-        
-        if self.observation_space.contains([new_x, new_y]):
+        if self.observation_space.contains([new_x, new_y, new_z]):
             pass
         else:
             # Clip the states to avoid the robot to go out of the workspace
             self.overshoot0 += 1
-            #print(new_x, new_y)
-            new_x, new_y = self.observation_space.clip([new_x,new_y])
-            #print(new_x, new_y)
-            # TODO: When it is clipped, then write a algorithm to fill the empy trajectory between before clip and after clip
+            clipped = self.observation_space.clip([new_x, new_y, new_z])
+            new_x, new_y, new_z = clipped[0], clipped[1], clipped[2]
 
-        if self.observation_space.contains([goal_x, goal_y]):
-            new_goal_x, new_goal_y = goal_x, goal_y
+        if self.observation_space.contains([goal_x, goal_y, goal_z]):
+            new_goal_x, new_goal_y, new_goal_z = goal_x, goal_y, goal_z
         else:
             # Clip the states to avoid the robot to go out of the workspace
             self.overshoot1 += 1
-            #print(goal_x,goal_y)
-            new_goal_x, new_goal_y = self.observation_space.clip([goal_x,goal_y])
-            #print(new_goal_x, new_goal_y)
-            #new_goal_x = np.clip(goal_x, self.observation_space.low[2], self.observation_space.high[2])
-            #new_goal_y = np.clip(goal_y, self.observation_space.low[3], self.observation_space.high[3])
-        
-        # States of the robot in numpy array
-        self.state = np.array([new_x,new_y,new_goal_x,new_goal_y])
+            clipped = self.observation_space.clip([goal_x, goal_y, goal_z])
+            new_goal_x, new_goal_y, new_goal_z = clipped[0], clipped[1], clipped[2]
+
+        # States of the robot in 6D numpy array
+        self.state = np.array([new_x, new_y, new_z, new_goal_x, new_goal_y, new_goal_z])
         
         if reward_function == 'step_minus_euclidean_square' or reward_function == 'step_minus_weighted_euclidean':
             return self._get_obs(), -self.costs, done, {} # Return the observation, the reward (-costs) and the done flag
@@ -351,81 +297,88 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
             return self._get_obs(), self.costs, done, {} # Return the observation, the reward (-costs) and the done flag
    
     def reset(self):
-       # self.overshoot0 = 0
-       # self.overshoot1 = 0
-       # Random state of the robot 
-       # (Random curvatures are given so that forward kinematics equation will generate random starting position)
-       self.kappa1 = np.random.uniform(low=-4, high=16)
-       self.kappa2 = np.random.uniform(low=-4, high=16)
-       self.kappa3 = np.random.uniform(low=-4, high=16)
-    
-       T3_cc = three_section_planar_robot(self.kappa1, self.kappa2, self.kappa3, self.l) # Generate the position of the tip of the robot
-       x,y = np.array([T3_cc[0,3],T3_cc[1,3]]) # Extract the x and y coordinates of the tip
-       
-       # Random target point
-       # (Random curvatures are given so that forward kinematics equation will generate random target position)
-       self.target_k1 = 6.2 # np.random.uniform(low=-4, high=16)
-       self.target_k2 = 6.2 # np.random.uniform(low=-4, high=16)
-       self.target_k3 = 6.2 # np.random.uniform(low=-4, high=16)
-       
-       T3_target = three_section_planar_robot(self.target_k1,self.target_k2,self.target_k3, self.l) # Generate the target point for the robot
-       goal_x,goal_y = np.array([T3_target[0,3],T3_target[1,3]]) # Extract the x and y coordinates of the target
-       
-       self.state = x,y,goal_x,goal_y # Update the state of the robot
-       
-       self.last_u = None
-       return self._get_obs()
+        # Random state of the robot
+        # (Random curvatures and angles are given so that forward kinematics generates random starting position)
+        self.kappa1 = np.random.uniform(low=-4, high=16)
+        self.kappa2 = np.random.uniform(low=-4, high=16)
+        self.kappa3 = np.random.uniform(low=-4, high=16)
+        self.phi1 = np.random.uniform(low=-np.pi, high=np.pi)
+        self.phi2 = np.random.uniform(low=-np.pi, high=np.pi)
+        self.phi3 = np.random.uniform(low=-np.pi, high=np.pi)
+
+        self.Kappa = [self.kappa1, self.kappa2, self.kappa3]
+        self.Phi = [self.phi1, self.phi2, self.phi3]
+
+        T3_cc = FK_pcc(self.Kappa, self.Phi, self.l) # Generate the position of the tip of the robot
+        x, y, z = T3_cc[0, 3], T3_cc[1, 3], T3_cc[2, 3]  # Extract the x, y, z coordinates of the tip
+
+        # Random target point
+        target_k1 = 6.2
+        target_k2 = 6.2
+        target_k3 = 6.2
+        target_p1 = np.random.uniform(low=-np.pi, high=np.pi)
+        target_p2 = np.random.uniform(low=-np.pi, high=np.pi)
+        target_p3 = np.random.uniform(low=-np.pi, high=np.pi)
+
+        T3_target = FK_pcc([target_k1, target_k2, target_k3], [target_p1, target_p2, target_p3], self.l)
+        goal_x, goal_y, goal_z = T3_target[0, 3], T3_target[1, 3], T3_target[2, 3]
+
+        self.state = np.array([x, y, z, goal_x, goal_y, goal_z], dtype=np.float32)
+
+        self.last_u = None
+        return self._get_obs()
     
     def _get_obs(self):
-        x,y,goal_x,goal_y = self.state
-        return np.array([x,y,goal_x,goal_y],dtype=np.float32)
+        x, y, z, goal_x, goal_y, goal_z = self.state
+        return np.array([x, y, z, goal_x, goal_y, goal_z], dtype=np.float32)
     
     def render_calculate(self):
-        # current state
-        # section 1 calculation
-        T1_cc = trans_mat_cc(self.kappa1,self.l[0])
-        T1_tip = np.reshape(T1_cc[len(T1_cc)-1,:],(4,4),order='F');
-        # section 2 calculation
-        T2 = trans_mat_cc(self.kappa2,self.l[1]);
-        T2_cc = coupletransformations(T2,T1_tip);
-        T2_tip = np.reshape(T2_cc[len(T2_cc)-1,:],(4,4),order='F');
-        # section 3 calculation
-        T3 = trans_mat_cc(self.kappa3,self.l[2]);
-        T3_cc = coupletransformations(T3,T2_tip);
+        # Compute 3D trajectory for current state
+        self.Kappa = [self.kappa1, self.kappa2, self.kappa3]
+        self.Phi = [self.phi1, self.phi2, self.phi3]
+        T_full = FK_pcc(self.Kappa, self.Phi, self.l)
 
-        self.position_dic['Section1']['x'].append(T1_cc[:,12])
-        self.position_dic['Section1']['y'].append(T1_cc[:,13])
-        self.position_dic['Section2']['x'].append(T2_cc[:,12])
-        self.position_dic['Section2']['y'].append(T2_cc[:,13])
-        self.position_dic['Section3']['x'].append(T3_cc[:,12])
-        self.position_dic['Section3']['y'].append(T3_cc[:,13])
+        # Extract 3D trajectory points (in practice, FK_pcc gives only tip, so we'd need intermediate points)
+        # For now, store the tip position
+        x_tip, y_tip, z_tip = T_full[0, 3], T_full[1, 3], T_full[2, 3]
+
+        self.position_dic['Section1']['x'].append(x_tip)
+        self.position_dic['Section1']['y'].append(y_tip)
+        self.position_dic['Section1']['z'].append(z_tip)
+        self.position_dic['Section2']['x'].append(x_tip)
+        self.position_dic['Section2']['y'].append(y_tip)
+        self.position_dic['Section2']['z'].append(z_tip)
+        self.position_dic['Section3']['x'].append(x_tip)
+        self.position_dic['Section3']['y'].append(y_tip)
+        self.position_dic['Section3']['z'].append(z_tip)
         
 
     def render_init(self):
-        # This function is used to plot the robot in the environment (both in start and end state)
+        # Initialize 3D plot for rendering
+        from mpl_toolkits.mplot3d import Axes3D
         self.fig = plt.figure()
-        self.fig.set_dpi(75);
-        self.ax = plt.axes();
+        self.fig.set_dpi(75)
+        self.ax = self.fig.add_subplot(111, projection='3d')
 
 
-    def render_update(self,i):
+    def render_update(self, i):
         self.ax.cla()
-        # Plot the trunk with three sections and point the section seperation
-        self.ax.plot([-0.025, 0.025],[0,0],'black',linewidth=5)
-        self.ax.plot(self.position_dic['Section1']['x'][i],self.position_dic['Section1']['y'][i],'b',linewidth=3)
-        #plt.scatter(T1_cc[-1,12],T1_cc[-1,13],linewidths=5,color = 'black')
-        self.ax.plot(self.position_dic['Section2']['x'][i],self.position_dic['Section2']['y'][i],'r',linewidth=3)
-        #plt.scatter(T2_cc[-1,12],T2_cc[-1,13],linewidths=5,color = 'black')
-        self.ax.plot(self.position_dic['Section3']['x'][i],self.position_dic['Section3']['y'][i],'g',linewidth=3)
-        self.ax.scatter(self.position_dic['Section3']['x'][i][-1],self.position_dic['Section3']['y'][i][-1],linewidths=5,color = 'black')
+        # Plot the 3D trunk with three sections
+        self.ax.plot([0], [0], [0], 'ko', markersize=5)
+        self.ax.plot(self.position_dic['Section1']['x'][i], self.position_dic['Section1']['y'][i], self.position_dic['Section1']['z'][i], 'b-', linewidth=3)
+        self.ax.plot(self.position_dic['Section2']['x'][i], self.position_dic['Section2']['y'][i], self.position_dic['Section2']['z'][i], 'r-', linewidth=3)
+        self.ax.plot(self.position_dic['Section3']['x'][i], self.position_dic['Section3']['y'][i], self.position_dic['Section3']['z'][i], 'g-', linewidth=3)
+        self.ax.scatter(self.position_dic['Section3']['x'][i], self.position_dic['Section3']['y'][i], self.position_dic['Section3']['z'][i], s=100, c='black')
 
-        # Plot the target point and trajectory of the robot
-        self.ax.scatter(self.state[2],self.state[3],100, marker= "x",linewidths=2, color = 'red')
-        self.ax.set_title(f"The time elapsed in the simulation is {round(self.time,2)} seconds.")
+        # Plot the target point
+        self.ax.scatter(self.state[3], self.state[4], self.state[5], s=100, marker='x', c='red')
+        self.ax.set_title(f"The time elapsed in the simulation is {round(self.time, 2)} seconds.")
         self.ax.set_xlabel("X - Position [m]")
         self.ax.set_ylabel("Y - Position [m]")
+        self.ax.set_zlabel("Z - Position [m]")
         self.ax.set_xlim([-0.4, 0.4])
         self.ax.set_ylim([-0.4, 0.4])
+        self.ax.set_zlim([-0.4, 0.4])
 
     
     def render(self):
@@ -434,61 +387,40 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         return ani
         
         
-    def visualization(self,x_pos,y_pos):
-        # This function is used to plot the robot in the environment (both in start and end state)
+    def visualization(self, x_pos, y_pos, z_pos=None):
+        # This function plots the robot trajectory in 3D space
+        from mpl_toolkits.mplot3d import Axes3D
 
-        # Start state
-        # section 1 calculation
-        T1_cc = trans_mat_cc(self.start_kappa[0],self.l[0])
-        T1_tip = np.reshape(T1_cc[len(T1_cc)-1,:],(4,4),order='F');
-        # section 2 calculation
-        T2 = trans_mat_cc(self.start_kappa[1],self.l[1]);
-        T2_cc = coupletransformations(T2,T1_tip);
-        T2_tip = np.reshape(T2_cc[len(T2_cc)-1,:],(4,4),order='F');
-        # section 3 calculation
-        T3 = trans_mat_cc(self.start_kappa[2],self.l[2]);
-        T3_cc = coupletransformations(T3,T2_tip);
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
 
-        # Plot the trunk with three sections and point the section seperation
-        plt.plot([-0.025, 0.025],[0,0],'black',linewidth=5)
-        plt.plot(T1_cc[:,12],T1_cc[:,13],'b',linewidth=3)
-        #plt.scatter(T1_cc[-1,12],T1_cc[-1,13],linewidths=5,color = 'black')
-        plt.plot(T2_cc[:,12],T2_cc[:,13],'r',linewidth=3)
-        #plt.scatter(T2_cc[-1,12],T2_cc[-1,13],linewidths=5,color = 'black')
-        plt.plot(T3_cc[:,12],T3_cc[:,13],'g',linewidth=3)
-        plt.scatter(T3_cc[-1,12],T3_cc[-1,13],linewidths=5,color = 'orange',label='Initial Point')
+        # Start state (using start_kappa and start_phi)
+        T_start = FK_pcc(self.start_kappa, self.start_phi, self.l)
+        x_start, y_start, z_start = T_start[0, 3], T_start[1, 3], T_start[2, 3]
+        ax.scatter(x_start, y_start, z_start, s=100, c='orange', marker='o', label='Initial Point')
 
-        # End state
-        # section 1 calculation
-        T1_cc = trans_mat_cc(self.kappa1,self.l[0])
-        T1_tip = np.reshape(T1_cc[len(T1_cc)-1,:],(4,4),order='F');
-        # section 2 calculation
-        T2 = trans_mat_cc(self.kappa2,self.l[1]);
-        T2_cc = coupletransformations(T2,T1_tip);
-        T2_tip = np.reshape(T2_cc[len(T2_cc)-1,:],(4,4),order='F');
-        # section 3 calculation
-        T3 = trans_mat_cc(self.kappa3,self.l[2]);
-        T3_cc = coupletransformations(T3,T2_tip);
+        # End state (current state)
+        T_end = FK_pcc(self.Kappa, self.Phi, self.l)
+        x_end, y_end, z_end = T_end[0, 3], T_end[1, 3], T_end[2, 3]
+        ax.scatter(x_end, y_end, z_end, s=100, c='black', marker='o')
 
-        # Plot the trunk with three sections and point the section seperation
-        plt.plot(T1_cc[:,12],T1_cc[:,13],'b',linewidth=3)
-        #plt.scatter(T1_cc[-1,12],T1_cc[-1,13],linewidths=5,color = 'black')
-        plt.plot(T2_cc[:,12],T2_cc[:,13],'r',linewidth=3)
-        #plt.scatter(T2_cc[-1,12],T2_cc[-1,13],linewidths=5,color = 'black')
-        plt.plot(T3_cc[:,12],T3_cc[:,13],'g',linewidth=3)
-        plt.scatter(T3_cc[-1,12],T3_cc[-1,13],linewidths=5,color = 'black')        
-        
-        # Plot the target point and trajectory of the robot
-        plt.scatter(self.state[2],self.state[3],100, marker= "x",linewidths=4, color = 'red',label='Target Point')
-        plt.scatter(x_pos,y_pos,25,linewidths=0.03,color = 'blue',alpha=0.2)
-        plt.xlim([-0.4, 0.4])
-        plt.ylim([-0.4, 0.4])
-        plt.xticks(fontsize=12)
-        plt.yticks(fontsize=12)
-        plt.legend(fontsize=15)
-        plt.grid(which='major',linewidth=0.7)
-        plt.grid(which='minor',linewidth=0.5)
-        # Show the minor ticks and grid.
-        plt.minorticks_on()
+        # Plot the target point
+        ax.scatter(self.state[3], self.state[4], self.state[5], s=100, c='red', marker='x', label='Target Point')
+
+        # Plot trajectory points if provided
+        if z_pos is not None:
+            ax.scatter(x_pos, y_pos, z_pos, s=25, c='blue', alpha=0.2)
+        else:
+            ax.scatter(x_pos, y_pos, s=25, c='blue', alpha=0.2)
+
+        ax.set_xlabel("X - Position [m]")
+        ax.set_ylabel("Y - Position [m]")
+        ax.set_zlabel("Z - Position [m]")
+        ax.set_xlim([-0.4, 0.4])
+        ax.set_ylim([-0.4, 0.4])
+        ax.set_zlim([-0.4, 0.4])
+        ax.legend(fontsize=12)
+        ax.grid(True)
+        plt.show()
         
 # %%
