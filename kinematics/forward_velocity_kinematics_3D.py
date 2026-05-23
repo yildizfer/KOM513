@@ -8,7 +8,7 @@ This forward_velocity_kinematics.py file contains all necessary kinematics funct
 import numpy as np
 
 # %% Function three_section_planar_robot
-def FK_pcc(Kappa, Phi, L): # TODO -> Add if else to figure out when any kappa = 0
+def FK_pcc(Kappa, Phi, L, allTips = False): # TODO -> Add if else to figure out when any kappa = 0
     '''
     * Homogeneous transformation matrix 
     * Mapping from configuration parameters to task space for the tip of the continuum robot
@@ -30,6 +30,7 @@ def FK_pcc(Kappa, Phi, L): # TODO -> Add if else to figure out when any kappa = 
     '''
     noSeg = len(L)
     T_list = []
+    T_tips = []
     T = 1
 
     for i in range(noSeg):
@@ -68,8 +69,12 @@ def FK_pcc(Kappa, Phi, L): # TODO -> Add if else to figure out when any kappa = 
 
     for i in range(noSeg-1, 0, -1):
         T = T_list[i]*T
+        T_tips.append(T)
 
-    return T
+    if allTips:
+        return T_tips
+    else:
+        return T
 
 # %% Function three_section_planar_robot
 def Jacobian_pcc(delta_kappa, delta_phi, Kappa, Phi, L): # TODO -> figure out singularity
@@ -201,8 +206,8 @@ def coupletransformations(T,T_tip):
     return Tc
 
 
-#T = three_section_spatial_robot([2.012, 1.741, 1.01], [0, 0, 0], [0.15, 0.15, 0.15])
+"""#T = three_section_spatial_robot([2.012, 1.741, 1.01], [0, 0, 0], [0.15, 0.15, 0.15])
 T = FK_pcc([2.012, 1.741], [0, 0], [0.15, 0.15])
 #J = Jacobian_pcc(0.1, 0.01, [2.012, 1.741, 1.01], [30, 10, -20], [0.15, 0.15, 0.15])
 print(T)
-#print(J)
+#print(J)"""

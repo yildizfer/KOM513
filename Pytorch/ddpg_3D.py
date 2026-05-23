@@ -16,7 +16,7 @@ Key differences from TensorFlow/Keras version:
 """
 
 import sys
-sys.path.append('../Reinforcement Learning')
+sys.path.append('./Reinforcement Learning')
 
 import torch
 print("Device:", torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
@@ -39,7 +39,7 @@ with open(file_path, "r") as file:
 
 start_time = time.time()
 
-TRAIN = False
+TRAIN = True  # Set to True to train, False to evaluate
 
 # Initialize environment
 env = continuumEnv()
@@ -137,8 +137,8 @@ def ddpg(n_episodes=300, max_t=750, print_every=25):
             i_episode, np.mean(scores_deque)), end="")
 
         # Save checkpoints every episode (for recovery)
-        torch.save(agent.actor_local.state_dict(), 'experiment/checkpoint_actor.pth')
-        torch.save(agent.critic_local.state_dict(), 'experiment/checkpoint_critic.pth')
+        torch.save(agent.actor_local.state_dict(), 'Pytorch/experiment/checkpoint_actor.pth')
+        torch.save(agent.critic_local.state_dict(), 'Pytorch/experiment/checkpoint_critic.pth')
 
     print('\n')
     print(f'{counter} times robot reached the target point in total {n_episodes} episodes')

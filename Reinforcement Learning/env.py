@@ -5,7 +5,8 @@
 '''
 # %% import necessary libraries
 import sys # to include the path of the package
-sys.path.append('../') # the kinematics functions are here 
+sys.path.append('./')
+sys.path.append('./kinematics/') # the kinematics functions are here
 
 import gymnasium as gym                     # openai gym library
 import numpy as np              # numpy for matrix operations
@@ -33,7 +34,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
     * -> Hannan, M. W. & Walker, I. D. Kinematics and the implementation of an elephant’s trunk manipulator and other 
     continuum style robots. J. Robot. Syst. 20, 45–63 (2003).
    
-     -  `x-y-z`: cartesian coordinates of the robot's tip point in meters.
+    - `x-y-z`: cartesian coordinates of the robot's tip point in meters.
     - `kappa` : curvatures in 1/m.
     - `phi` : planar bending angles in radians.
     - `kappa_dot` : derivative of curvatures in 1/m/s.
@@ -336,21 +337,25 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         # Compute 3D trajectory for current state
         self.Kappa = [self.kappa1, self.kappa2, self.kappa3]
         self.Phi = [self.phi1, self.phi2, self.phi3]
-        T_full = FK_pcc(self.Kappa, self.Phi, self.l)
+        [T1, T2, T3] = FK_pcc(self.Kappa, self.Phi, self.l, allTips=True)
 
+        tip1 = T1[0:3, 3]
+        tip2 = T2[0:3, 3]
+        tip3 = T3[0:3, 3]
+        
         # Extract 3D trajectory points (in practice, FK_pcc gives only tip, so we'd need intermediate points)
         # For now, store the tip position
-        x_tip, y_tip, z_tip = T_full[0, 3], T_full[1, 3], T_full[2, 3]
+        #x_tip, y_tip, z_tip = T[0, 3], T[1, 3], T[2, 3]
 
-        self.position_dic['Section1']['x'].append(x_tip)
-        self.position_dic['Section1']['y'].append(y_tip)
-        self.position_dic['Section1']['z'].append(z_tip)
-        self.position_dic['Section2']['x'].append(x_tip)
-        self.position_dic['Section2']['y'].append(y_tip)
-        self.position_dic['Section2']['z'].append(z_tip)
-        self.position_dic['Section3']['x'].append(x_tip)
-        self.position_dic['Section3']['y'].append(y_tip)
-        self.position_dic['Section3']['z'].append(z_tip)
+        self.position_dic['Section1']['x'].append(T1[0, 3])
+        self.position_dic['Section1']['y'].append(T1[1, 3])
+        self.position_dic['Section1']['z'].append(T1[2, 3])
+        self.position_dic['Section2']['x'].append(T2[0, 3])
+        self.position_dic['Section2']['y'].append(T2[1, 3])
+        self.position_dic['Section2']['z'].append(T2[2, 3])
+        self.position_dic['Section3']['x'].append(T3[0, 3])
+        self.position_dic['Section3']['y'].append(T3[1, 3])
+        self.position_dic['Section3']['z'].append(T3[2, 3])
         
 
     def render_init(self):
