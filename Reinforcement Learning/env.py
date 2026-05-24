@@ -125,19 +125,30 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         self.Kappa = [self.kappa1, self.kappa2, self.kappa3]
         self.Phi = [self.phi1, self.phi2, self.phi3]
 
-    def step(self, u, reward_function:str = 'step_minus_euclidean_square'):
-
-        x, y, z, goal_x, goal_y, goal_z = self.state # Get the current 6D state
-
         # global variables to be used in the reward function
-        global new_x
+        """global new_x
         global new_y
         global new_z
         global new_goal_x
         global new_goal_y
-        global new_goal_z
+        global new_goal_z"""
+
+        new_x, new_y, new_z = 0.0, 0.0, 0.0
+        new_goal_x, new_goal_y, new_goal_z = 0.0, 0.0, 0.0
+
+    def step(self, u, reward_function:str = 'step_minus_euclidean_square'):
+
+        x, y, z, goal_x, goal_y, goal_z = self.state # Get the current 6D state
+
+        """global new_x
+        global new_y
+        global new_z
+        global new_goal_x
+        global new_goal_y
+        global new_goal_z"""
 
         dt =  self.dt # Time step
+        self.time += dt  # Increment time
 
         # Clip action: first 3 dims for kappa_dot, next 3 for phi_dot
         u[0:3] = np.clip(u[0:3], -self.kappa_dot_max, self.kappa_dot_max)
@@ -229,13 +240,15 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
 
         if reward_function == 'step_minus_euclidean_square':
             # if the error is less than 0.01, the robot is close to the goal and returns done
-            if math.sqrt(self.costs) <= 0.005:
+            if math.sqrt(self.costs) <= 0.01:
+                #print(f"DONE triggered at step {self.time}: error={math.sqrt(self.costs):.4f}m, state=({new_x:.4f}, {new_y:.4f}, {new_z:.4f}), goal=({new_goal_x:.4f}, {new_goal_y:.4f}, {new_goal_z:.4f})")
                 done = True
             else:
                 done = False
         else:
             # if the error is less than 0.01, the robot is close to the goal and returns done
-            if self.error <= 0.005:
+            if self.error <= 0.01:
+                #print(f"DONE triggered at step {self.time}: error={self.error:.4f}m, state=({new_x:.4f}, {new_y:.4f}, {new_z:.4f}), goal=({new_goal_x:.4f}, {new_goal_y:.4f}, {new_goal_z:.4f})")
                 done = True
             else:
                 done = False
@@ -310,13 +323,17 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         self.Kappa = [self.kappa1, self.kappa2, self.kappa3]
         self.Phi = [self.phi1, self.phi2, self.phi3]
 
+        # Save starting configuration for visualization
+        self.start_kappa = [self.kappa1, self.kappa2, self.kappa3]
+        self.start_phi = [self.phi1, self.phi2, self.phi3]
+
         T3_cc = FK_pcc(self.Kappa, self.Phi, self.l) # Generate the position of the tip of the robot
         x, y, z = T3_cc[0, 3], T3_cc[1, 3], T3_cc[2, 3]  # Extract the x, y, z coordinates of the tip
 
         # Random target point
-        target_k1 = 6.2
-        target_k2 = 6.2
-        target_k3 = 6.2
+        target_k1 = np.random.uniform(low=-4, high=16)
+        target_k2 = np.random.uniform(low=-4, high=16)
+        target_k3 = np.random.uniform(low=-4, high=16)
         target_p1 = np.random.uniform(low=-np.pi, high=np.pi)
         target_p2 = np.random.uniform(low=-np.pi, high=np.pi)
         target_p3 = np.random.uniform(low=-np.pi, high=np.pi)
@@ -326,6 +343,12 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
 
         self.state = np.array([x, y, z, goal_x, goal_y, goal_z], dtype=np.float32)
 
+        # Debug print
+        initial_distance = np.sqrt((goal_x-x)**2 + (goal_y-y)**2 + (goal_z-z)**2)
+        #print(f"RESET: Initial pos=({x:.4f}, {y:.4f}, {z:.4f}), Target=({goal_x:.4f}, {goal_y:.4f}, {goal_z:.4f}), Distance={initial_distance:.4f}m")
+
+        self.time = 0
+        self.previous_error = initial_distance
         self.last_u = None
         return self._get_obs()
     
@@ -404,17 +427,30 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         x_start, y_start, z_start = T_start[0, 3], T_start[1, 3], T_start[2, 3]
         ax.scatter(x_start, y_start, z_start, s=100, c='orange', marker='o', label='Initial Point')
 
+        [T1, T2, T3] = FK_pcc(self.Kappa, self.Phi, self.l, allTips=True)
+
+        tip0 = T_start[0:3, 3]
+        tip1 = T1[0:3, 3]
+        tip2 = T2[0:3, 3]
+        tip3 = T3[0:3, 3]
+
         # End state (current state)
         T_end = FK_pcc(self.Kappa, self.Phi, self.l)
-        x_end, y_end, z_end = T_end[0, 3], T_end[1, 3], T_end[2, 3]
+        x_end, y_end, z_end = tip3[0], tip3[1], tip3[2]
         ax.scatter(x_end, y_end, z_end, s=100, c='black', marker='o')
+
+        ax.plot([tip0[0], tip1[0]], [tip0[1], tip1[1]], [tip0[2], tip1[2]], 'b',linewidth=3)
+        ax.plot([tip1[0], tip2[0]], [tip1[1], tip2[1]], [tip1[2], tip2[2]], 'r',linewidth=3)
+        ax.plot([tip2[0], tip3[0]], [tip2[1], tip3[1]], [tip2[2], tip3[2]], 'g',linewidth=3)
+        ax.scatter(tip3[0], tip3[1], tip3[2],linewidths=5,color = 'black')   
 
         # Plot the target point
         ax.scatter(self.state[3], self.state[4], self.state[5], s=100, c='red', marker='x', label='Target Point')
 
         # Plot trajectory points if provided
         if z_pos is not None:
-            ax.scatter(x_pos, y_pos, z_pos, s=25, c='blue', alpha=0.2)
+            pass
+            #ax.scatter(x_pos, y_pos, z_pos, s=25, c='blue', alpha=0.2)
         else:
             ax.scatter(x_pos, y_pos, s=25, c='blue', alpha=0.2)
 

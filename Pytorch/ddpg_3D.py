@@ -49,7 +49,7 @@ env = continuumEnv()
 # Action size: 6 (3 curvature rates + 3 bending angle rates)
 agent = Agent(state_size=6, action_size=6, random_seed=10)
 
-def ddpg(n_episodes=300, max_t=750, print_every=25):
+def ddpg(n_episodes=1000, max_t=750, print_every=50):
     """
     Deep Deterministic Policy Gradient Training Loop
 
@@ -68,6 +68,8 @@ def ddpg(n_episodes=300, max_t=750, print_every=25):
     scores = []
     avg_reward_list = []
     counter = 0
+    distances_at_reset = []
+    actions_magnitude = []
 
     for i_episode in range(1, n_episodes+1):
         # Reset environment: random start and goal positions
@@ -93,10 +95,14 @@ def ddpg(n_episodes=300, max_t=750, print_every=25):
             print("===============================================================")
             time.sleep(0.5)
 
+        episode_distances = []
+        episode_actions = []
+
         # Run episode
         for t in range(max_t):
             # Actor selects action based on current policy + exploration noise
             action = agent.act(state)
+            episode_actions.append(np.linalg.norm(action))
 
             # Execute action in environment
             # Available reward functions:
@@ -108,6 +114,11 @@ def ddpg(n_episodes=300, max_t=750, print_every=25):
                 action,
                 reward_function=config['reward']['function']
             )
+            env.render_calculate()
+
+            # Track distance to goal
+            dist = np.linalg.norm(next_state[3:6] - next_state[0:3])
+            episode_distances.append(dist)
 
             # Agent processes the experience:
             # 1. Stores in replay buffer
@@ -129,12 +140,19 @@ def ddpg(n_episodes=300, max_t=750, print_every=25):
         scores_deque.append(score)
         scores.append(score)
 
+        # Track diagnostics
+        if episode_distances:
+            distances_at_reset.append(episode_distances[0])
+            actions_magnitude.append(np.mean(episode_actions))
+
         # Compute moving average over recent episodes (helps smooth learning signal)
         avg_reward_list.append(np.mean(scores[-100:]))
 
         # Print progress
-        print('\rEpisode {}\tAverage Score: {:.2f}'.format(
-            i_episode, np.mean(scores_deque)), end="")
+        print('\rEpisode {}\tAverage Score: {:.2f}\tAvg Init Dist: {:.4f}m\tAvg Action: {:.4f}'.format(
+            i_episode, np.mean(scores_deque),
+            np.mean(distances_at_reset[-print_every:]) if distances_at_reset else 0,
+            np.mean(actions_magnitude[-print_every:]) if actions_magnitude else 0), end="")
 
         # Save checkpoints every episode (for recovery)
         torch.save(agent.actor_local.state_dict(), 'Pytorch/experiment/checkpoint_actor.pth')
@@ -142,10 +160,13 @@ def ddpg(n_episodes=300, max_t=750, print_every=25):
 
     print('\n')
     print(f'{counter} times robot reached the target point in total {n_episodes} episodes')
+    print(f'Success rate: {counter/n_episodes*100:.1f}%')
     end_time = time.time() - start_time
     print('Total Workspace Overshoots: ', env.overshoot0)
     print('Total Goal Overshoots: ', env.overshoot1)
     print(f'Total Elapsed Time is {int(end_time)/60} minutes')
+    print(f'Average initial-target distance: {np.mean(distances_at_reset):.4f}m (range: {np.min(distances_at_reset):.4f}m to {np.max(distances_at_reset):.4f}m)')
+    print(f'Average action magnitude: {np.mean(actions_magnitude):.4f}')
 
     return scores
 

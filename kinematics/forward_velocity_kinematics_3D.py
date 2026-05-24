@@ -31,7 +31,7 @@ def FK_pcc(Kappa, Phi, L, allTips = False): # TODO -> Add if else to figure out 
     noSeg = len(L)
     T_list = []
     T_tips = []
-    T = 1
+    T = np.eye(4)
 
     for i in range(noSeg):
 
@@ -54,7 +54,7 @@ def FK_pcc(Kappa, Phi, L, allTips = False): # TODO -> Add if else to figure out 
         R12 = cphi*sphi*(cth-1)
         R13 = -cphi*sth
 
-        R21 = cphi-sphi-(cth-1)
+        R21 = cphi*sphi*(cth-1)
         R22 = sphi**2*cth+cphi**2
         R23 = -sphi*sth
     
@@ -67,8 +67,8 @@ def FK_pcc(Kappa, Phi, L, allTips = False): # TODO -> Add if else to figure out 
 
         T_list.append(Ti)
 
-    for i in range(noSeg-1, 0, -1):
-        T = T_list[i]*T
+    for i in range(noSeg-1, -1, -1):
+        T = T_list[i]@T
         T_tips.append(T)
 
     if allTips:

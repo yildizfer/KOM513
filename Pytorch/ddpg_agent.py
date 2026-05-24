@@ -9,13 +9,22 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 
-BUFFER_SIZE = int(5e4)  # replay buffer size
+BUFFER_SIZE = int(1e6)  # 1M (was 50k)
+BATCH_SIZE = 128        # was 64
+GAMMA = 0.99            # ✓ keep
+TAU = 1e-3              # ✓ keep (or try 5e-3)
+LR_ACTOR = 1e-4         # was 1e-3 (10x lower!)
+LR_CRITIC = 1e-3        # was 1e-2 (10x lower!)
+WEIGHT_DECAY = 1e-4     # ✓ keep
+
+"""BUFFER_SIZE = int(5e4)  # replay buffer size
 BATCH_SIZE = 64         # minibatch size
 GAMMA = 0.99            # discount factor
 TAU = 1e-3              # for soft update of target parameters
 LR_ACTOR = 1e-3         # learning rate of the actor
 LR_CRITIC = 1e-2        # learning rate of the critic
-WEIGHT_DECAY = 1e-4     # L2 weight decay / 0.0001
+WEIGHT_DECAY = 1e-4     # L2 weight decay / 0.0001"""
+
 
 # BUFFER_SIZE = int(5e5)  # replay buffer size
 # BATCH_SIZE = 128        # minibatch size
