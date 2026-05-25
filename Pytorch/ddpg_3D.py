@@ -16,7 +16,7 @@ Key differences from TensorFlow/Keras version:
 """
 
 import sys
-sys.path.append('./Reinforcement Learning')
+sys.path.append('./KOM513/Reinforcement Learning')
 
 import torch
 print("Device:", torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
@@ -49,7 +49,18 @@ env = continuumEnv()
 # Action size: 6 (3 curvature rates + 3 bending angle rates)
 agent = Agent(state_size=6, action_size=6, random_seed=10)
 
-def ddpg(n_episodes=1000, max_t=750, print_every=50):
+# DEBUG: Verify fixes are loaded
+print("\n" + "="*60)
+print("DIAGNOSTICS - Verifying Phase 1 Fixes")
+print("="*60)
+from ddpg_agent import LR_ACTOR, LR_CRITIC, TAU, WEIGHT_DECAY
+print(f"✓ LR_ACTOR: {LR_ACTOR} (should be 1e-3)")
+print(f"✓ LR_CRITIC: {LR_CRITIC} (should be 1e-2)")
+print(f"✓ TAU: {TAU} (should be 1e-3)")
+print(f"✓ WEIGHT_DECAY: {WEIGHT_DECAY} (should be 1e-4)")
+print("="*60 + "\n")
+
+def ddpg(n_episodes=300, max_t=750, print_every=50):
     """
     Deep Deterministic Policy Gradient Training Loop
 
@@ -155,8 +166,8 @@ def ddpg(n_episodes=1000, max_t=750, print_every=50):
             np.mean(actions_magnitude[-print_every:]) if actions_magnitude else 0), end="")
 
         # Save checkpoints every episode (for recovery)
-        torch.save(agent.actor_local.state_dict(), 'Pytorch/experiment/checkpoint_actor.pth')
-        torch.save(agent.critic_local.state_dict(), 'Pytorch/experiment/checkpoint_critic.pth')
+        torch.save(agent.actor_local.state_dict(), 'KOM513/Pytorch/experiment/checkpoint_actor.pth')
+        torch.save(agent.critic_local.state_dict(), 'KOM513/Pytorch/experiment/checkpoint_critic.pth')
 
     print('\n')
     print(f'{counter} times robot reached the target point in total {n_episodes} episodes')

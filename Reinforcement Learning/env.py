@@ -5,8 +5,8 @@
 '''
 # %% import necessary libraries
 import sys # to include the path of the package
-sys.path.append('./')
-sys.path.append('./kinematics/') # the kinematics functions are here
+sys.path.append('./KOM513/')
+sys.path.append('./KOM513/kinematics/') # the kinematics functions are here
 
 import gymnasium as gym                     # openai gym library
 import numpy as np              # numpy for matrix operations
@@ -267,6 +267,20 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         new_y = y + state_update[1]
         new_z = z + state_update[2]
         
+        # In env.py after position update (~line 270):
+        if not hasattr(self, 'action_state_correlation'):
+            self.action_state_correlation = []
+
+            # Track one sample: action[0] vs position change
+            dx = np.linalg.norm(np.array([new_x-self.state[0], new_y-self.state[1], new_z-self.state[2]]))
+            self.action_state_correlation.append((u[0], dx))
+
+            if len(self.action_state_correlation) > 1000:
+                corr_data = np.array(self.action_state_correlation)
+                correlation = np.corrcoef(corr_data[:, 0], corr_data[:, 1])[0, 1]
+                print(f"Correlation between action[0] and position change: {correlation:.4f}")
+                print(f"  (Should be > 0.1 for meaningful control)")
+
         # Update the joint variables
         self.kappa1 += u[0] * dt
         self.kappa2 += u[1] * dt
@@ -304,11 +318,13 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
 
         # States of the robot in 6D numpy array
         self.state = np.array([new_x, new_y, new_z, new_goal_x, new_goal_y, new_goal_z])
-        
+
         if reward_function == 'step_minus_euclidean_square' or reward_function == 'step_minus_weighted_euclidean':
-            return self._get_obs(), -self.costs, done, {} # Return the observation, the reward (-costs) and the done flag
+            reward = np.clip(-self.costs, -1.0, 1.0)
+            return self._get_obs(), reward, done, {}
         elif reward_function == 'step_error_comparison' or reward_function == 'step_distance_based':
-            return self._get_obs(), self.costs, done, {} # Return the observation, the reward (-costs) and the done flag
+            reward = np.clip(self.costs, -1.0, 1.0)
+            return self._get_obs(), reward, done, {}
    
     def reset(self):
         # Random state of the robot

@@ -12,7 +12,7 @@ import torch.optim as optim
 BUFFER_SIZE = int(1e6)  # 1M (was 50k)
 BATCH_SIZE = 128        # was 64
 GAMMA = 0.99            # ✓ keep
-TAU = 1e-3              # ✓ keep (or try 5e-3)
+TAU = 5e-3              # ✓ keep (or try 5e-3)
 LR_ACTOR = 1e-4         # was 1e-3 (10x lower!)
 LR_CRITIC = 1e-3        # was 1e-2 (10x lower!)
 WEIGHT_DECAY = 1e-4     # ✓ keep
@@ -130,8 +130,10 @@ class Agent():
         # Minimize the loss
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        critic_grad_norm = torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1.0)
+        if critic_grad_norm > 5.0:  # Print only if gradient would have exploded without clipping
+            print(f"DEBUG: Clipped critic grad norm from {critic_grad_norm:.4f} to 1.0")
         self.critic_optimizer.step()
-
         # ---------------------------- update actor ---------------------------- #
         # Compute actor loss
         actions_pred = self.actor_local(states)
@@ -160,7 +162,7 @@ class Agent():
 class OUNoise:
     """Ornstein-Uhlenbeck process."""
 
-    def __init__(self, size, seed, mu=0., theta=0.15, sigma=0.2):
+    def __init__(self, size, seed, mu=0., theta=0.15, sigma=0.05):
         """Initialize parameters and noise process."""
         self.mu = mu * np.ones(size)
         self.theta = theta
