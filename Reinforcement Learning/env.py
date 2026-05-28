@@ -303,10 +303,13 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
             clipped = self.observation_space.clip([goal_x, goal_y, goal_z])
             new_goal_x, new_goal_y, new_goal_z = clipped[0], clipped[1], clipped[2]
 
-        # States of the robot in 12D numpy array (Cartesian + Joint variables)
+        # States of the robot in 16D numpy array (Cartesian + Joint variables)
+        error_vec = [new_goal_x - new_x, new_goal_y - new_y, new_goal_z - new_z]
+        distance = np.linalg.norm(error_vec)
         self.state = np.array([new_x, new_y, new_z, new_goal_x, new_goal_y, new_goal_z, 
                                self.kappa1, self.kappa2, self.kappa3, 
-                               self.phi1, self.phi2, self.phi3], dtype=np.float32)
+                               self.phi1, self.phi2, self.phi3,
+                               error_vec[0], error_vec[1], error_vec[2], distance], dtype=np.float32)
 
         # CRITICAL FIX: Recalculate error using NEW state (not the old state from beginning of step)
         # This was the root cause of inverted rewards - error was 1 step behind!
@@ -318,9 +321,9 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
 
         elif reward_function == 'step_minus_euclidean_square':
             self.error = ((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2)
+            self.costs = self.error
             if self.error < self.previous_error:
                 self.costs -= 0.02
-            self.costs = self.error
 
         elif reward_function == 'step_error_comparison':
             self.error = math.sqrt(((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2))
@@ -418,7 +421,14 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         return self._get_obs()
     
     def _get_obs(self):
-        return np.copy(self.state).astype(np.float32)
+        obs = np.copy(self.state).astype(np.float32)
+        obs[0:3] = obs[0:3] / 0.3              # x, y, z positions (max length 0.3m)
+        obs[3:6] = obs[3:6] / 0.3              # goal positions
+        obs[6:9] = (obs[6:9] - 6.0) / 10.0      # curvatures (range [-4, 16] -> [-1, 1])
+        obs[9:12] = obs[9:12] / np.pi          # bending angles (range [-pi, pi] -> [-1, 1])
+        obs[12:15] = obs[12:15] / 0.3          # error vector
+        obs[15] = obs[15] / 0.3                # distance to goal
+        return obs
     
     def render_calculate(self):
         # Compute 3D trajectory for current state

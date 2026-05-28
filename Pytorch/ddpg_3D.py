@@ -95,10 +95,10 @@ def ddpg(n_episodes=300, max_t=1000, print_every=30):
         if i_episode % print_every == 0:
             print('\n')
             # Print first 3 state elements (current position x, y, z)
-            print("Initial Position is", state[0:3])
+            print("Initial Position is", env.state[0:3])
             print("===============================================================")
             # Print last 3 state elements (goal position x, y, z)
-            print("Target Position is", state[3:6])
+            print("Target Position is", env.state[3:6])
             print("===============================================================")
             print("Initial Kappas are ", [env.kappa1, env.kappa2, env.kappa3])
             print("===============================================================")
@@ -129,8 +129,8 @@ def ddpg(n_episodes=300, max_t=1000, print_every=30):
             )
             env.render_calculate()
 
-            # Track distance to goal
-            dist = np.linalg.norm(next_state[3:6] - next_state[0:3])
+            # Track distance to goal (physical meters)
+            dist = env.state[15]
             episode_distances.append(dist)
 
             # Track rewards for diagnostics
@@ -197,7 +197,7 @@ if TRAIN:
     scores = ddpg()
 
     # Plot training curves
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 4))
 
     # Plot moving average
     ax1.plot(np.arange(1, len(avg_reward_list)+1), avg_reward_list)

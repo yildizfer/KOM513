@@ -3,7 +3,7 @@ import random
 import copy
 from collections import namedtuple, deque
 
-from model import Actor, Critic
+from model_3D import Actor, Critic
 
 import torch
 import torch.nn.functional as F
@@ -13,8 +13,8 @@ BUFFER_SIZE = int(1e6)  # 1M (was 50k)
 BATCH_SIZE = 128         # Reduced from 128 (larger batches amplify gradient issues)
 GAMMA = 0.99            # ✓ keep
 TAU = 1e-3              # Increased from 5e-3 (faster target network adaptation)
-LR_ACTOR = 1e-3         # Standard value
-LR_CRITIC = 5e-3        # Reduced from 1e-2 (prevents critic divergence)
+LR_ACTOR = 1e-4         # More stable learning rate for DDPG
+LR_CRITIC = 3e-4        # More stable learning rate for DDPG
 WEIGHT_DECAY = 1e-4     # ✓ keep
 
 """BUFFER_SIZE = int(5e4)  # replay buffer size
@@ -100,7 +100,7 @@ class Agent():
             action = self.actor_local(state).cpu().data.numpy()
         self.actor_local.train()
         if add_noise:
-            action += noise_scale*self.noise.sample()
+            action += noise_scale * self.noise.sample()
         return np.clip(action, -1, 1)
 
     def reset(self):

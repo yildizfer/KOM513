@@ -27,7 +27,7 @@ def hidden_init(layer):
     Returns:
         (lower_bound, upper_bound) tuple for uniform initialization
     """
-    fan_in = layer.weight.data.size()[0]
+    fan_in = layer.weight.data.size()[1]
     lim = 1. / np.sqrt(fan_in)
     return (-lim, lim)
 
