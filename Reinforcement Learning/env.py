@@ -5,8 +5,8 @@
 '''
 # %% import necessary libraries
 import sys # to include the path of the package
-sys.path.append('./KOM513/')
-sys.path.append('./KOM513/kinematics/') # the kinematics functions are here
+sys.path.append('./RL-based-Control-of-a-Soft-Continuum-Robot')
+sys.path.append('./RL-based-Control-of-a-Soft-Continuum-Robot/kinematics') # the kinematics functions are here
 
 import gymnasium as gym                     # openai gym library
 import numpy as np              # numpy for matrix operations
@@ -138,7 +138,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
 
     def step(self, u, reward_function:str = 'step_minus_euclidean_square'):
 
-        x, y, z, goal_x, goal_y, goal_z = self.state # Get the current 6D state
+        x, y, z, goal_x, goal_y, goal_z = self.state[0:6] # Get the current 6D Cartesian state
 
         """global new_x
         global new_y
@@ -154,7 +154,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         u[0:3] = np.clip(u[0:3], -self.kappa_dot_max, self.kappa_dot_max)
         u[3:6] = np.clip(u[3:6], -self.phi_dot_max, self.phi_dot_max)
 
-        if reward_function == 'step_error_comparison':
+        """if reward_function == 'step_error_comparison':
             self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)+((goal_z-z)**2)) # Calculate 3D distance
 
             if self.error < self.previous_error:
@@ -208,9 +208,8 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
                 self.costs -= 0.07
             # Just to show if the robot is moving along the goal or not
             if self.error < self.previous_error:
-                #self.costs -= 1
+                self.costs -= 0.02
                 # UNCOMMENT HERE !!!!!!!
-                pass
                 # print("=========================POSITIVE MOVE=========================")
         
         elif reward_function == 'step_distance_based':
@@ -251,36 +250,8 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
                 #print(f"DONE triggered at step {self.time}: error={self.error:.4f}m, state=({new_x:.4f}, {new_y:.4f}, {new_z:.4f}), goal=({new_goal_x:.4f}, {new_goal_y:.4f}, {new_goal_z:.4f})")
                 done = True
             else:
-                done = False
+                done = False"""
         
-        # Compute velocity using 3D Jacobian and integrate state
-        self.Kappa = [self.kappa1, self.kappa2, self.kappa3]
-        self.Phi = [self.phi1, self.phi2, self.phi3]
-        self.J = Jacobian_pcc(self.delta_kappa, self.delta_phi, self.Kappa, self.Phi, self.l)
-
-        # 6D input: first 3 are kappa_dot, next 3 are phi_dot
-        # Jacobian maps joint velocities to end-effector velocities (linear + angular)
-        x_vel = self.J @ u  # 6D velocity: [vx, vy, vz, wx, wy, wz]
-        state_update = x_vel[0:3] * dt  # Extract position velocity and integrate
-
-        new_x = x + state_update[0]
-        new_y = y + state_update[1]
-        new_z = z + state_update[2]
-        
-        # In env.py after position update (~line 270):
-        if not hasattr(self, 'action_state_correlation'):
-            self.action_state_correlation = []
-
-            # Track one sample: action[0] vs position change
-            dx = np.linalg.norm(np.array([new_x-self.state[0], new_y-self.state[1], new_z-self.state[2]]))
-            self.action_state_correlation.append((u[0], dx))
-
-            if len(self.action_state_correlation) > 1000:
-                corr_data = np.array(self.action_state_correlation)
-                correlation = np.corrcoef(corr_data[:, 0], corr_data[:, 1])[0, 1]
-                print(f"Correlation between action[0] and position change: {correlation:.4f}")
-                print(f"  (Should be > 0.1 for meaningful control)")
-
         # Update the joint variables
         self.kappa1 += u[0] * dt
         self.kappa2 += u[1] * dt
@@ -299,7 +270,23 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         self.phi1 = np.arctan2(np.sin(self.phi1), np.cos(self.phi1))
         self.phi2 = np.arctan2(np.sin(self.phi2), np.cos(self.phi2))
         self.phi3 = np.arctan2(np.sin(self.phi3), np.cos(self.phi3))
+
+        # Compute exact new position using FK to prevent drift
+        self.Kappa = [self.kappa1, self.kappa2, self.kappa3]
+        self.Phi = [self.phi1, self.phi2, self.phi3]
         
+        T3_cc = FK_pcc(self.Kappa, self.Phi, self.l)
+        new_x, new_y, new_z = T3_cc[0, 3], T3_cc[1, 3], T3_cc[2, 3]
+
+        # Calculate Jacobian for analysis/logging if needed
+        """self.J = Jacobian_pcc(self.delta_kappa, self.delta_phi, self.Kappa, self.Phi, self.l)
+
+        x_vel = self.J @ u
+        state_update = x_vel * dt
+        new_x = x + state_update[0]
+        new_y = y + state_update[1]
+        new_z = z + state_update[2]"""
+
         if self.observation_space.contains([new_x, new_y, new_z]):
             pass
         else:
@@ -316,14 +303,70 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
             clipped = self.observation_space.clip([goal_x, goal_y, goal_z])
             new_goal_x, new_goal_y, new_goal_z = clipped[0], clipped[1], clipped[2]
 
-        # States of the robot in 6D numpy array
-        self.state = np.array([new_x, new_y, new_z, new_goal_x, new_goal_y, new_goal_z])
+        # States of the robot in 12D numpy array (Cartesian + Joint variables)
+        self.state = np.array([new_x, new_y, new_z, new_goal_x, new_goal_y, new_goal_z, 
+                               self.kappa1, self.kappa2, self.kappa3, 
+                               self.phi1, self.phi2, self.phi3], dtype=np.float32)
+
+        # CRITICAL FIX: Recalculate error using NEW state (not the old state from beginning of step)
+        # This was the root cause of inverted rewards - error was 1 step behind!
+        if reward_function == 'step_minus_weighted_euclidean':
+            self.error = math.sqrt(((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2))
+            self.costs = 0.7 * self.error
+            if self.error <= 0.01:
+                self.costs -= 0.07
+
+        elif reward_function == 'step_minus_euclidean_square':
+            self.error = ((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2)
+            if self.error < self.previous_error:
+                self.costs -= 0.02
+            self.costs = self.error
+
+        elif reward_function == 'step_error_comparison':
+            self.error = math.sqrt(((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2))
+            if self.error < self.previous_error:
+                self.costs = 1.00
+            elif self.error == self.previous_error:
+                self.costs = -0.50
+            else:
+                self.costs = -1.0
+
+        elif reward_function == 'step_distance_based':
+            self.error = math.sqrt(((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2))
+            if self.error == self.previous_error:
+                self.costs = -100
+            else:
+                if self.error <= 0.025:
+                    self.costs = 200
+                elif self.error <= 0.05:
+                    self.costs = 150
+                elif self.error <= 0.1:
+                    self.costs = 100
+                else:
+                    self.costs = 1000*(self.previous_error - self.error)
+
+        # Update previous_error after recalculation
+        self.previous_error = self.error
+
+        if reward_function == 'step_minus_euclidean_square':
+            if math.sqrt(self.costs) <= 0.01:
+                done = True
+            else:
+                done = False
+        else:
+            if self.error <= 0.01:
+                done = True
+            else:
+                done = False
 
         if reward_function == 'step_minus_euclidean_square' or reward_function == 'step_minus_weighted_euclidean':
-            reward = np.clip(-self.costs, -1.0, 1.0)
+            reward = -self.costs
+            return self._get_obs(), reward, done, {}
+        elif reward_function == 'step_scaled_distance':
+            reward = -self.costs
             return self._get_obs(), reward, done, {}
         elif reward_function == 'step_error_comparison' or reward_function == 'step_distance_based':
-            reward = np.clip(self.costs, -1.0, 1.0)
+            reward = self.costs
             return self._get_obs(), reward, done, {}
    
     def reset(self):
@@ -356,8 +399,14 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
 
         T3_target = FK_pcc([target_k1, target_k2, target_k3], [target_p1, target_p2, target_p3], self.l)
         goal_x, goal_y, goal_z = T3_target[0, 3], T3_target[1, 3], T3_target[2, 3]
+        
+        error_vec = [goal_x - x, goal_y - y, goal_z - z]
+        distance = np.linalg.norm(error_vec)
 
-        self.state = np.array([x, y, z, goal_x, goal_y, goal_z], dtype=np.float32)
+        self.state = np.array([x, y, z, goal_x, goal_y, goal_z, 
+                               self.kappa1, self.kappa2, self.kappa3, 
+                               self.phi1, self.phi2, self.phi3, 
+                               error_vec[0], error_vec[1], error_vec[2], distance], dtype=np.float32)
 
         # Debug print
         initial_distance = np.sqrt((goal_x-x)**2 + (goal_y-y)**2 + (goal_z-z)**2)
@@ -369,8 +418,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         return self._get_obs()
     
     def _get_obs(self):
-        x, y, z, goal_x, goal_y, goal_z = self.state
-        return np.array([x, y, z, goal_x, goal_y, goal_z], dtype=np.float32)
+        return np.copy(self.state).astype(np.float32)
     
     def render_calculate(self):
         # Compute 3D trajectory for current state
@@ -453,9 +501,11 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         # End state (current state)
         T_end = FK_pcc(self.Kappa, self.Phi, self.l)
         x_end, y_end, z_end = tip3[0], tip3[1], tip3[2]
+
+        ax.scatter(0, 0, 0, s=100, c='blue', marker='o')
         ax.scatter(x_end, y_end, z_end, s=100, c='black', marker='o')
 
-        ax.plot([tip0[0], tip1[0]], [tip0[1], tip1[1]], [tip0[2], tip1[2]], 'b',linewidth=3)
+        ax.plot([0, tip1[0]], [0, tip1[1]], [0, tip1[2]], 'b',linewidth=3)
         ax.plot([tip1[0], tip2[0]], [tip1[1], tip2[1]], [tip1[2], tip2[2]], 'r',linewidth=3)
         ax.plot([tip2[0], tip3[0]], [tip2[1], tip3[1]], [tip2[2], tip3[2]], 'g',linewidth=3)
         ax.scatter(tip3[0], tip3[1], tip3[2],linewidths=5,color = 'black')   

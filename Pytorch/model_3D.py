@@ -43,15 +43,15 @@ class Actor(nn.Module):
     Uses batch normalization between hidden layers for improved convergence.
 
     Architecture for 3D:
-    Input (6) -> FC1 (64) -> FC2 (32) -> FC3 (16) -> FC4 (8) -> Output (6, tanh)
+    Input (16) -> FC1 (256) -> FC2 (256) -> FC3 (128) -> FC4 (8) -> Output (6, tanh)
 
     Why these layer sizes?
-    - Start moderately large (64) to capture state features
+    - Start moderately large (256) to capture state features
     - Progressively shrink towards action dimension
     - Small output layer helps stability with tanh saturation
     """
 
-    def __init__(self, state_size, action_size, seed, fc1_units=64, fc2_units=32, fc3_units=16, fc4_units=8):
+    def __init__(self, state_size, action_size, seed, fc1_units=256, fc2_units=256, fc3_units=128, fc4_units=8):
         """
         Initialize actor network.
 
@@ -125,12 +125,12 @@ class Critic(nn.Module):
     This allows the network to learn state features independently from action-value coupling.
 
     Architecture for 3D:
-    State (6) -> FC1 (64) -> 32 units
-    Action (6) -> FC1 (32 units)
-    Concatenate -> FC2 (32) -> FC3 (16) -> Output (1)
+    State (16) -> FC1 (256) -> 256 units
+    Action (6) -> FC1 (256 units)
+    Concatenate -> FC2 (256) -> FC3 (128) -> Output (1)
     """
 
-    def __init__(self, state_size, action_size, seed, fcs1_units=64, fc2_units=32, fc3_units=16):
+    def __init__(self, state_size, action_size, seed, fcs1_units=256, fc2_units=256, fc3_units=128):
         """
         Initialize critic network.
 

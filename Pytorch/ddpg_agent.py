@@ -10,11 +10,11 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 BUFFER_SIZE = int(1e6)  # 1M (was 50k)
-BATCH_SIZE = 128        # was 64
+BATCH_SIZE = 128         # Reduced from 128 (larger batches amplify gradient issues)
 GAMMA = 0.99            # ✓ keep
-TAU = 5e-3              # ✓ keep (or try 5e-3)
-LR_ACTOR = 1e-4         # was 1e-3 (10x lower!)
-LR_CRITIC = 1e-3        # was 1e-2 (10x lower!)
+TAU = 1e-3              # Increased from 5e-3 (faster target network adaptation)
+LR_ACTOR = 1e-3         # Standard value
+LR_CRITIC = 5e-3        # Reduced from 1e-2 (prevents critic divergence)
 WEIGHT_DECAY = 1e-4     # ✓ keep
 
 """BUFFER_SIZE = int(5e4)  # replay buffer size
@@ -80,6 +80,7 @@ class Agent():
 
         # Replay memory
         self.memory = ReplayBuffer(action_size, BUFFER_SIZE, BATCH_SIZE, random_seed)
+        self.tau = TAU #might delete later, but keeping for now to track changes
     
     def step(self, state, action, reward, next_state, done):
         """Save experience in replay memory, and use random sample from buffer to learn."""
@@ -91,7 +92,7 @@ class Agent():
             experiences = self.memory.sample()
             self.learn(experiences, GAMMA)
 
-    def act(self, state, add_noise=True):
+    def act(self, state, add_noise=True, noise_scale=1.0):
         """Returns actions for given state as per current policy."""
         state = torch.from_numpy(state).float().to(device)
         self.actor_local.eval()
@@ -99,7 +100,7 @@ class Agent():
             action = self.actor_local(state).cpu().data.numpy()
         self.actor_local.train()
         if add_noise:
-            action += self.noise.sample()
+            action += noise_scale*self.noise.sample()
         return np.clip(action, -1, 1)
 
     def reset(self):
@@ -130,9 +131,7 @@ class Agent():
         # Minimize the loss
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
-        critic_grad_norm = torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1.0)
-        if critic_grad_norm > 5.0:  # Print only if gradient would have exploded without clipping
-            print(f"DEBUG: Clipped critic grad norm from {critic_grad_norm:.4f} to 1.0")
+        torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1.0)
         self.critic_optimizer.step()
         # ---------------------------- update actor ---------------------------- #
         # Compute actor loss
@@ -162,7 +161,7 @@ class Agent():
 class OUNoise:
     """Ornstein-Uhlenbeck process."""
 
-    def __init__(self, size, seed, mu=0., theta=0.15, sigma=0.05):
+    def __init__(self, size, seed, mu=0., theta=0.15, sigma=0.2):
         """Initialize parameters and noise process."""
         self.mu = mu * np.ones(size)
         self.theta = theta
@@ -177,7 +176,8 @@ class OUNoise:
     def sample(self):
         """Update internal state and return it as a noise sample."""
         x = self.state
-        dx = self.theta * (self.mu - x) + self.sigma * np.array([random.random() for i in range(len(x))])
+        #dx = self.theta * (self.mu - x) + self.sigma * np.array([random.random() for i in range(len(x))])
+        dx = self.theta * (self.mu - x) + self.sigma * np.random.standard_normal(len(x))
         self.state = x + dx
         return self.state
 

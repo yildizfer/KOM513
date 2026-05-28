@@ -1,8 +1,8 @@
 # %% Libraries and important folders
 import sys
-sys.path.append('./KOM513/')
-sys.path.append('./KOM513/Reinforcement Learning')
-sys.path.append('./KOM513/Pytorch')
+sys.path.append('./RL-based-Control-of-a-Soft-Continuum-Robot/')
+sys.path.append('./RL-based-Control-of-a-Soft-Continuum-Robot/Reinforcement Learning')
+sys.path.append('./RL-based-Control-of-a-Soft-Continuum-Robot/Pytorch')
 
 import torch
 import matplotlib.pyplot as plt
@@ -15,12 +15,15 @@ import time
 # %% Evaluation
 env = continuumEnv()
 # env.seed(10)
-agent = Agent(state_size=6, action_size=6, random_seed=10)
+agent = Agent(state_size=16, action_size=6, random_seed=10)
 
 #### Change the directory for your file structure
-agent.actor_local.load_state_dict(torch.load(f"./KOM513/Pytorch/{config['goal_type']}/{config['reward']['file']}/model/checkpoint_actor.pth",map_location=torch.device('cpu')))
-agent.critic_local.load_state_dict(torch.load(f"./KOM513/Pytorch/{config['goal_type']}/{config['reward']['file']}/model/checkpoint_critic.pth",map_location=torch.device('cpu')))
- 
+#agent.actor_local.load_state_dict(torch.load(f"./RL-based-Control-of-a-Soft-Continuum-Robot/Pytorch/{config['goal_type']}/{config['reward']['file']}/model/checkpoint_actor.pth",map_location=torch.device('cpu')))
+#agent.critic_local.load_state_dict(torch.load(f"./RL-based-Control-of-a-Soft-Continuum-Robot/Pytorch/{config['goal_type']}/{config['reward']['file']}/model/checkpoint_critic.pth",map_location=torch.device('cpu')))
+
+agent.actor_local.load_state_dict(torch.load(f"./RL-based-Control-of-a-Soft-Continuum-Robot/Pytorch/experiment/checkpoint_actor.pth",map_location=torch.device('cpu')))
+agent.critic_local.load_state_dict(torch.load(f"./RL-based-Control-of-a-Soft-Continuum-Robot/Pytorch/experiment/checkpoint_critic.pth",map_location=torch.device('cpu')))
+
 state = env.reset() # generate random starting point for the robot and random target point.
 env.start_kappa = [env.kappa1, env.kappa2, env.kappa3] # save starting kappas
 #env.render_init()
@@ -29,7 +32,7 @@ x_pos = []
 y_pos = []
 z_pos = []
 
-for t in range(750):
+for t in range(1500):
     start = time.time()
     action = agent.act(state, add_noise=False)
 

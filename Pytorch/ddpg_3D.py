@@ -16,7 +16,7 @@ Key differences from TensorFlow/Keras version:
 """
 
 import sys
-sys.path.append('./KOM513/Reinforcement Learning')
+sys.path.append('./RL-based-Control-of-a-Soft-Continuum-Robot/Reinforcement Learning')
 
 import torch
 print("Device:", torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
@@ -45,9 +45,9 @@ TRAIN = True  # Set to True to train, False to evaluate
 env = continuumEnv()
 
 # Create agent with 3D state and action spaces
-# State size: 6 (x, y, z for current position + goal position)
+# State size: 16 (x, y, z, goal_x, goal_y, goal_z, kappa_1..3, phi_1..3, error_x, error_y, error_z, distance_to_goal)
 # Action size: 6 (3 curvature rates + 3 bending angle rates)
-agent = Agent(state_size=6, action_size=6, random_seed=10)
+agent = Agent(state_size=16, action_size=6, random_seed=10)
 
 # DEBUG: Verify fixes are loaded
 print("\n" + "="*60)
@@ -60,7 +60,7 @@ print(f"✓ TAU: {TAU} (should be 1e-3)")
 print(f"✓ WEIGHT_DECAY: {WEIGHT_DECAY} (should be 1e-4)")
 print("="*60 + "\n")
 
-def ddpg(n_episodes=300, max_t=750, print_every=50):
+def ddpg(n_episodes=300, max_t=1000, print_every=30):
     """
     Deep Deterministic Policy Gradient Training Loop
 
@@ -108,11 +108,13 @@ def ddpg(n_episodes=300, max_t=750, print_every=50):
 
         episode_distances = []
         episode_actions = []
+        episode_rewards = []
 
         # Run episode
         for t in range(max_t):
             # Actor selects action based on current policy + exploration noise
-            action = agent.act(state)
+            noise_scale = max(0.05, 1.0 - i_episode / 2000)
+            action = agent.act(state, add_noise=True, noise_scale=noise_scale)
             episode_actions.append(np.linalg.norm(action))
 
             # Execute action in environment
@@ -130,6 +132,9 @@ def ddpg(n_episodes=300, max_t=750, print_every=50):
             # Track distance to goal
             dist = np.linalg.norm(next_state[3:6] - next_state[0:3])
             episode_distances.append(dist)
+
+            # Track rewards for diagnostics
+            episode_rewards.append(reward)
 
             # Agent processes the experience:
             # 1. Stores in replay buffer
@@ -159,15 +164,17 @@ def ddpg(n_episodes=300, max_t=750, print_every=50):
         # Compute moving average over recent episodes (helps smooth learning signal)
         avg_reward_list.append(np.mean(scores[-100:]))
 
-        # Print progress
-        print('\rEpisode {}\tAverage Score: {:.2f}\tAvg Init Dist: {:.4f}m\tAvg Action: {:.4f}'.format(
+        # Print progress with reward diagnostics
+        reward_range = f"[{np.min(episode_rewards):.3f}, {np.max(episode_rewards):.3f}]" if episode_rewards else "N/A"
+        print('\rEpisode {}\tAverage Score: {:.2f}\tReward Range: {}\tAvg Init Dist: {:.4f}m\tAvg Action: {:.4f}'.format(
             i_episode, np.mean(scores_deque),
+            reward_range,
             np.mean(distances_at_reset[-print_every:]) if distances_at_reset else 0,
             np.mean(actions_magnitude[-print_every:]) if actions_magnitude else 0), end="")
 
         # Save checkpoints every episode (for recovery)
-        torch.save(agent.actor_local.state_dict(), 'KOM513/Pytorch/experiment/checkpoint_actor.pth')
-        torch.save(agent.critic_local.state_dict(), 'KOM513/Pytorch/experiment/checkpoint_critic.pth')
+        torch.save(agent.actor_local.state_dict(), './RL-based-Control-of-a-Soft-Continuum-Robot/Pytorch/experiment/checkpoint_actor.pth')
+        torch.save(agent.critic_local.state_dict(), './RL-based-Control-of-a-Soft-Continuum-Robot/Pytorch/experiment/checkpoint_critic.pth')
 
     print('\n')
     print(f'{counter} times robot reached the target point in total {n_episodes} episodes')
@@ -207,7 +214,8 @@ if TRAIN:
     ax2.grid()
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig('results.png')
+    # plt.show()
 
     # Save training results
     with open('scores.pickle', 'wb') as f:

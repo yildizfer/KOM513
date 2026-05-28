@@ -45,10 +45,18 @@ def FK_pcc(Kappa, Phi, L, allTips = False): # TODO -> Add if else to figure out 
 
         cth = np.cos(theta)
         sth = np.sin(theta)
-        
-        X = (1-cth)*cphi/k
-        Y = (1-cth)*sphi/k
-        Z = sth/k
+
+        # Handle singularity when curvature is near zero (straight segment)
+        epsilon = 1e-6
+        if abs(k) > epsilon:
+            X = (1-cth)*cphi/k
+            Y = (1-cth)*sphi/k
+            Z = sth/k
+        else:
+            # When curvature ≈ 0, segment is straight (linear motion)
+            X = 0
+            Y = 0
+            Z = l
 
         R11 = cphi**2*cth+sphi**2
         R12 = cphi*sphi*(cth-1)
@@ -57,7 +65,7 @@ def FK_pcc(Kappa, Phi, L, allTips = False): # TODO -> Add if else to figure out 
         R21 = cphi*sphi*(cth-1)
         R22 = sphi**2*cth+cphi**2
         R23 = -sphi*sth
-    
+
         R31 = cphi*sth
         R32 = sphi*sth
         R33 = cth
@@ -67,8 +75,8 @@ def FK_pcc(Kappa, Phi, L, allTips = False): # TODO -> Add if else to figure out 
 
         T_list.append(Ti)
 
-    for i in range(noSeg-1, -1, -1):
-        T = T_list[i]@T
+    for i in range(noSeg):
+        T = T @ T_list[i]
         T_tips.append(T)
 
     if allTips:
@@ -111,14 +119,14 @@ def Jacobian_pcc(delta_kappa, delta_phi, Kappa, Phi, L): # TODO -> figure out si
         Kappa_n = Kappa.copy() #negative perturbation for kappa
         Phi_n = Phi.copy() #negative perturbation for phi
 
-        idx = i//2
-
-        if i%2 == 0:
+        if i < len(L):
+            idx = i
             Kappa_p[idx] += delta_kappa
             Kappa_n[idx] -= delta_kappa
             epsilon = delta_kappa
 
         else:
+            idx = i - len(L)
             Phi_p[idx] += delta_phi
             Phi_n[idx] -= delta_phi
             epsilon = delta_phi
