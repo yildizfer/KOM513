@@ -315,9 +315,18 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         # This was the root cause of inverted rewards - error was 1 step behind!
         if reward_function == 'step_minus_weighted_euclidean':
             self.error = math.sqrt(((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2))
-            self.costs = 0.7 * self.error
+            # Dense distance penalty
+            self.costs = 1.0 * self.error
+            # Action magnitude penalty to discourage large, jerky oscillations near target
+            action_penalty = 0.01 * np.sum(np.square(u))
+            self.costs += action_penalty
+            # Precision attraction pull active when distance <= 3cm
+            if self.error <= 0.03:
+                precision_pull = 5.0 * (0.03 - self.error)
+                self.costs -= precision_pull
+            # Large terminal success bonus
             if self.error <= 0.01:
-                self.costs -= 0.07
+                self.costs -= 5.0
 
         elif reward_function == 'step_minus_euclidean_square':
             self.error = ((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2)
@@ -517,13 +526,17 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         tube2 = polyLine2.tube(radius=0.01)
         tube3 = polyLine3.tube(radius=0.01)
 
-        plotter.add_points(np.column_stack((x_start, y_start, z_start)), color='yellow', point_size=10, name='Initial')
-        plotter.add_points(np.column_stack((self.state[3], self.state[4], self.state[5])), color='orange', point_size=10, name='Target')
-        plotter.add_points(np.column_stack((x_pos[-1], y_pos[-1], z_pos[-1])), color='black', point_size=10, name='Actual')
+        sphere1 = pv.Sphere(radius=0.01, center=np.column_stack((x_start, y_start, z_start)))
+        sphere2 = pv.Sphere(radius=0.01, center=np.column_stack((self.state[3], self.state[4], self.state[5])))
+        sphere3 = pv.Sphere(radius=0.01, center=np.column_stack((x_pos[-1], y_pos[-1], z_pos[-1])))
 
         actor1 = plotter.add_mesh(tube1, color='red', name='Section 1')
         actor2 = plotter.add_mesh(tube2, color='green', name='Section 2')
         actor3 = plotter.add_mesh(tube3, color='blue', name='Section 3')
+
+        actor4 = plotter.add_mesh(sphere1, color='yellow', name='Initial')
+        actor5 = plotter.add_mesh(sphere2, color='orange', name='Target')
+        actor6 = plotter.add_mesh(sphere3, color='black', name='Actual')
 
         plotter.show_grid()
         plotter.show(auto_close=False)

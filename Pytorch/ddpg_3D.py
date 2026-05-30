@@ -113,7 +113,9 @@ def ddpg(n_episodes=5000, max_t=1000, print_every=30):
         # Run episode
         for t in range(max_t):
             # Actor selects action based on current policy + exploration noise
-            noise_scale = max(0.05, 1.0 - i_episode / 3000)
+            # Decay exploration noise scale dynamically over 80% of training episodes down to 0.01
+            decay_episodes = int(n_episodes * 0.8)
+            noise_scale = max(0.01, 1.0 - i_episode / decay_episodes)
             action = agent.act(state, add_noise=True, noise_scale=noise_scale)
             episode_actions.append(np.linalg.norm(action))
 

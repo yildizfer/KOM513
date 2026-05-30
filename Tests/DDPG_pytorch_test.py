@@ -33,7 +33,7 @@ y_pos = []
 z_pos = []
 normalization_factor = env.l[0] + env.l[1] + env.l[2]
 
-for t in range(1500):
+for t in range(1000):
     start = time.time()
     action = agent.act(state, add_noise=False)
 
