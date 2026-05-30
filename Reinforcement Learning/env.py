@@ -489,55 +489,44 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         return ani
         
         
-    def visualization(self, x_pos, y_pos, z_pos=None):
+    def visualization(self, x_pos, y_pos, z_pos):
         # This function plots the robot trajectory in 3D space
-        from mpl_toolkits.mplot3d import Axes3D
+        import pyvista as pv
 
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
+        pointNo = 50
+        plotter = pv.Plotter()
 
         # Start state (using start_kappa and start_phi)
         T_start = FK_pcc(self.start_kappa, self.start_phi, self.l)
         x_start, y_start, z_start = T_start[0, 3], T_start[1, 3], T_start[2, 3]
-        ax.scatter(x_start, y_start, z_start, s=100, c='orange', marker='o', label='Initial Point')
 
-        [T1, T2, T3] = FK_pcc(self.Kappa, self.Phi, self.l, allTips=True)
+        T1_arr = np.array(FK_pcc([self.Kappa[0]], [self.Phi[0]], [self.l[0]], discrete_points=pointNo))
+        T2_arr = np.array(FK_pcc([self.Kappa[0], self.Kappa[1]], [self.Phi[0], self.Phi[1]], [self.l[0], self.l[1]], discrete_points=pointNo))
+        T3_arr = np.array(FK_pcc([self.Kappa[0], self.Kappa[1], self.Kappa[2]], [self.Phi[0], self.Phi[1], self.Phi[2]], [self.l[0], self.l[1], self.l[2]], discrete_points=pointNo))
 
-        tip0 = T_start[0:3, 3]
-        tip1 = T1[0:3, 3]
-        tip2 = T2[0:3, 3]
-        tip3 = T3[0:3, 3]
+        T1_tips = T1_arr[:, 0:3, 3]  # Extract tip positions for section 1
+        T2_tips = T2_arr[:, 0:3, 3]  # Extract tip positions for section 2
+        T3_tips = T3_arr[:, 0:3, 3] # Extract tip positions for section 3
+        #[T1, T2, T3] = FK_pcc(self.Kappa, self.Phi, self.l, allTips=True)
 
-        # End state (current state)
-        T_end = FK_pcc(self.Kappa, self.Phi, self.l)
-        x_end, y_end, z_end = tip3[0], tip3[1], tip3[2]
+        polyLine1 = pv.lines_from_points(T1_tips)
+        polyLine2 = pv.lines_from_points(T2_tips)
+        polyLine3 = pv.lines_from_points(T3_tips)
 
-        ax.scatter(0, 0, 0, s=100, c='blue', marker='o')
-        ax.scatter(x_end, y_end, z_end, s=100, c='black', marker='o')
+        tube1 = polyLine1.tube(radius=0.01)
+        tube2 = polyLine2.tube(radius=0.01)
+        tube3 = polyLine3.tube(radius=0.01)
 
-        ax.plot([0, tip1[0]], [0, tip1[1]], [0, tip1[2]], 'b',linewidth=3)
-        ax.plot([tip1[0], tip2[0]], [tip1[1], tip2[1]], [tip1[2], tip2[2]], 'r',linewidth=3)
-        ax.plot([tip2[0], tip3[0]], [tip2[1], tip3[1]], [tip2[2], tip3[2]], 'g',linewidth=3)
-        ax.scatter(tip3[0], tip3[1], tip3[2],linewidths=5,color = 'black')   
+        plotter.add_points(np.column_stack((x_start, y_start, z_start)), color='yellow', point_size=10, name='Initial')
+        plotter.add_points(np.column_stack((self.state[3], self.state[4], self.state[5])), color='orange', point_size=10, name='Target')
+        plotter.add_points(np.column_stack((x_pos[-1], y_pos[-1], z_pos[-1])), color='black', point_size=10, name='Actual')
 
-        # Plot the target point
-        ax.scatter(self.state[3], self.state[4], self.state[5], s=100, c='red', marker='x', label='Target Point')
+        actor1 = plotter.add_mesh(tube1, color='red', name='Section 1')
+        actor2 = plotter.add_mesh(tube2, color='green', name='Section 2')
+        actor3 = plotter.add_mesh(tube3, color='blue', name='Section 3')
 
-        # Plot trajectory points if provided
-        if z_pos is not None:
-            pass
-            #ax.scatter(x_pos, y_pos, z_pos, s=25, c='blue', alpha=0.2)
-        else:
-            ax.scatter(x_pos, y_pos, s=25, c='blue', alpha=0.2)
-
-        ax.set_xlabel("X - Position [m]")
-        ax.set_ylabel("Y - Position [m]")
-        ax.set_zlabel("Z - Position [m]")
-        ax.set_xlim([-0.4, 0.4])
-        ax.set_ylim([-0.4, 0.4])
-        ax.set_zlim([-0.4, 0.4])
-        ax.legend(fontsize=12)
-        ax.grid(True)
-        plt.show()
+        plotter.show_grid()
+        plotter.show(auto_close=False)
+        
         
 # %%

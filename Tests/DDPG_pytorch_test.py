@@ -5,7 +5,7 @@ sys.path.append('./RL-based-Control-of-a-Soft-Continuum-Robot/Reinforcement Lear
 sys.path.append('./RL-based-Control-of-a-Soft-Continuum-Robot/Pytorch')
 
 import torch
-import matplotlib.pyplot as plt
+import pyvista as pv
 from ddpg_agent import Agent
 from ddpg import config
 from env import continuumEnv
@@ -31,8 +31,9 @@ initial_state = state[0:3]
 x_pos = []
 y_pos = []
 z_pos = []
+normalization_factor = env.l[0] + env.l[1] + env.l[2]
 
-for t in range(1000):
+for t in range(1500):
     start = time.time()
     action = agent.act(state, add_noise=False)
 
@@ -42,9 +43,9 @@ for t in range(1000):
     # 'step_distance_based' is du-1 - du
     state, reward, done, _ = env.step(action, reward_function = config['reward']['function'])
     #env.render_calculate()
-    x_pos.append(state[0])
-    y_pos.append(state[1])
-    z_pos.append(state[2])
+    x_pos.append(state[0]*normalization_factor)
+    y_pos.append(state[1]*normalization_factor)
+    z_pos.append(state[2]*normalization_factor)
     #env.render() # uncomment for instant animation
     print("{}th action".format(t))
     print("Goal Position",state[3:6])

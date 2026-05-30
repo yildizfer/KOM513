@@ -8,7 +8,7 @@ This forward_velocity_kinematics.py file contains all necessary kinematics funct
 import numpy as np
 
 # %% Function three_section_planar_robot
-def FK_pcc(Kappa, Phi, L, allTips = False): # TODO -> Add if else to figure out when any kappa = 0
+def FK_pcc(Kappa, Phi, L, allTips = False, discrete_points = 0): # TODO -> Add if else to figure out when any kappa = 0
     '''
     * Homogeneous transformation matrix 
     * Mapping from configuration parameters to task space for the tip of the continuum robot
@@ -28,56 +28,39 @@ def FK_pcc(Kappa, Phi, L, allTips = False): # TODO -> Add if else to figure out 
         Transformation matrices containing orientation and position
 
     '''
+    
     noSeg = len(L)
     T_list = []
     T_tips = []
     T = np.eye(4)
 
     for i in range(noSeg):
-
         k = Kappa[i]
         l = L[i]
         phi = Phi[i]
-        theta = k*l
-
-        cphi = np.cos(phi)
-        sphi = np.sin(phi)
-
-        cth = np.cos(theta)
-        sth = np.sin(theta)
-
-        # Handle singularity when curvature is near zero (straight segment)
-        epsilon = 1e-6
-        if abs(k) > epsilon:
-            X = (1-cth)*cphi/k
-            Y = (1-cth)*sphi/k
-            Z = sth/k
-        else:
-            # When curvature ≈ 0, segment is straight (linear motion)
-            X = 0
-            Y = 0
-            Z = l
-
-        R11 = cphi**2*cth+sphi**2
-        R12 = cphi*sphi*(cth-1)
-        R13 = -cphi*sth
-
-        R21 = cphi*sphi*(cth-1)
-        R22 = sphi**2*cth+cphi**2
-        R23 = -sphi*sth
-
-        R31 = cphi*sth
-        R32 = sphi*sth
-        R33 = cth
-
-        Ti = np.array([R11, R12, R13, 0, R21, R22, R23, 0, R31, R32, R33, 0, X, Y, Z, 1])
-        Ti = np.reshape(Ti, (4,4), order="F")
-
+        
+        Ti = transform(k, phi, l)
         T_list.append(Ti)
 
-    for i in range(noSeg):
-        T = T @ T_list[i]
+        T = T @ Ti
         T_tips.append(T)
+
+    
+    if discrete_points:
+        k = Kappa[-1]
+        phi = Phi[-1]
+        subLen = L[-1]/discrete_points
+        T_discrete_arr = np.zeros((discrete_points+1, 4, 4))
+        if noSeg == 1:
+            T_prev = np.eye(4)
+        else:
+            T_prev = T_tips[noSeg-2]
+        for i in range(discrete_points+1):
+            l = subLen*(i)
+            Ti = transform(k, phi, l)
+            T_discrete_arr[i] = T_prev @ Ti
+        
+        return T_discrete_arr
 
     if allTips:
         return T_tips
@@ -149,40 +132,42 @@ def Jacobian_pcc(delta_kappa, delta_phi, Kappa, Phi, L): # TODO -> figure out si
 # %% Function three_section_planar_robot
 
 # Planar Robot Kinematics Functions
-def trans_mat_cc(kappa, l):
-    '''
-    *  Homogeneous transformation matrix
-    *  Mapping from configuration parameters to task space
-    * tip frame is aligned so that the x-axis points toward the center of the circle
+def transform(k, phi, l):
+    theta = k*l
+    cphi = np.cos(phi)
+    sphi = np.sin(phi)
 
-    Parameters
-    ----------
-    kappa : list
-        curvature value for all sections
-    l : list
-        trunk length contains all sections
+    cth = np.cos(theta)
+    sth = np.sin(theta)
 
-    Returns
-    -------
-    T: numpy array
-        Transformation matrices containing orientation and position
+    # Handle singularity when curvature is near zero (straight segment)
+    epsilon = 1e-6
+    if abs(k) > epsilon:
+        X = (1-cth)*cphi/k
+        Y = (1-cth)*sphi/k
+        Z = sth/k
+    else:
+        # When curvature ≈ 0, segment is straight (linear motion)
+        X = 0
+        Y = 0
+        Z = l
 
-    '''
+    R11 = cphi**2*cth+sphi**2
+    R12 = cphi*sphi*(cth-1)
+    R13 = -cphi*sth
 
-    # num = sect_points: points per section
-    si=np.linspace(0,l, num = 50);
-    T= np.zeros((len(si),16));
-    
-    for i in range(len(si)):
-        s=si[i];
-        c_ks=np.cos(kappa*s);
-        s_ks=np.sin(kappa*s);
-        if kappa==0:
-            T[i,:] = np.array([c_ks,s_ks,0,0,-s_ks,c_ks,0,0,0,0,1,0,0,s,0,1]);  
-        else:
-            T[i,:] = np.array([c_ks,s_ks,0,0,-s_ks,c_ks,0,0,0,0,1,0,(c_ks-1)/kappa,s_ks/kappa,0,1]);
+    R21 = cphi*sphi*(cth-1)
+    R22 = sphi**2*cth+cphi**2
+    R23 = -sphi*sth
 
-    return T
+    R31 = cphi*sth
+    R32 = sphi*sth
+    R33 = cth
+
+    Ti = np.array([R11, R12, R13, 0, R21, R22, R23, 0, R31, R32, R33, 0, X, Y, Z, 1])
+    Ti = np.reshape(Ti, (4,4), order="F")
+
+    return Ti
 
 # %% Function three_section_planar_robot
 def coupletransformations(T,T_tip):

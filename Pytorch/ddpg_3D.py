@@ -60,7 +60,7 @@ print(f"✓ TAU: {TAU} (should be 1e-3)")
 print(f"✓ WEIGHT_DECAY: {WEIGHT_DECAY} (should be 1e-4)")
 print("="*60 + "\n")
 
-def ddpg(n_episodes=300, max_t=1000, print_every=30):
+def ddpg(n_episodes=5000, max_t=1000, print_every=30):
     """
     Deep Deterministic Policy Gradient Training Loop
 
@@ -113,7 +113,7 @@ def ddpg(n_episodes=300, max_t=1000, print_every=30):
         # Run episode
         for t in range(max_t):
             # Actor selects action based on current policy + exploration noise
-            noise_scale = max(0.05, 1.0 - i_episode / 2000)
+            noise_scale = max(0.05, 1.0 - i_episode / 3000)
             action = agent.act(state, add_noise=True, noise_scale=noise_scale)
             episode_actions.append(np.linalg.norm(action))
 
