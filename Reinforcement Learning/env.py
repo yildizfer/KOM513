@@ -106,6 +106,10 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         self.time = 0               # to count the time of the simulation
         self.overshoot0 = 0
         self.overshoot1 = 0
+        self.normalization_factor = self.l[0] + self.l[1] + self.l[2]
+        self.convergence_counter = 0            # counts consecutive steps within threshold
+        self.convergence_threshold = 0.01       # 1cm convergence radius
+        self.convergence_patience = 20          # 20 steps × 0.05s = 1s of stability required
         self.position_dic = {'Section1': {'x':[],'y':[],'z':[]}, 'Section2': {'x':[],'y':[],'z':[]}, 'Section3': {'x':[],'y':[],'z':[]}}
         # Define the observation and action space from OpenAI Gym
         # 6D observation space: [x, y, z, goal_x, goal_y, goal_z]
@@ -124,6 +128,9 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         self.phi3 = 0.0
         self.Kappa = [self.kappa1, self.kappa2, self.kappa3]
         self.Phi = [self.phi1, self.phi2, self.phi3]
+
+        self.u = 0
+        self.prev_u = 0
 
         # global variables to be used in the reward function
         """global new_x
@@ -153,6 +160,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         # Clip action: first 3 dims for kappa_dot, next 3 for phi_dot
         u[0:3] = np.clip(u[0:3], -self.kappa_dot_max, self.kappa_dot_max)
         u[3:6] = np.clip(u[3:6], -self.phi_dot_max, self.phi_dot_max)
+        self.u = u
 
         """if reward_function == 'step_error_comparison':
             self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)+((goal_z-z)**2)) # Calculate 3D distance
@@ -315,18 +323,46 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         # This was the root cause of inverted rewards - error was 1 step behind!
         if reward_function == 'step_minus_weighted_euclidean':
             self.error = math.sqrt(((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2))
-            # Dense distance penalty
-            self.costs = 1.0 * self.error
-            # Action magnitude penalty to discourage large, jerky oscillations near target
-            action_penalty = 0.01 * np.sum(np.square(u))
-            self.costs += action_penalty
-            # Precision attraction pull active when distance <= 3cm
-            if self.error <= 0.03:
-                precision_pull = 5.0 * (0.03 - self.error)
-                self.costs -= precision_pull
-            # Large terminal success bonus
-            if self.error <= 0.01:
-                self.costs -= 5.0
+
+            # --- Component 1: Distance cost (smooth bounded curve) ---
+            # Use smooth sigmoid-like curve to avoid extreme values and create consistent gradients
+            distance_cost = 1.0 - np.exp(-8.0 * self.error)  # bounded to [0, 1]
+
+            # --- Component 2: Progress reward (direct gradient) ---
+            # Reward getting closer - no normalization to preserve gradient strength
+            progress = self.previous_error - self.error  # positive = good
+            progress_reward = 3.0 * progress
+
+            # --- Component 3: Fine-tuning zone bonus (smooth transitions) ---
+            # Gradually reward being close, avoiding sharp exponential cliffs that cause jitter
+            if self.error < 0.01:  # within 10mm - very close
+                fine_tune_reward = 2
+            elif self.error < 0.02:  # within 20mm - close enough
+                fine_tune_reward = 0.5
+            else:
+                fine_tune_reward = 0.0
+
+            # --- Component 4: Orientation penalty (prevent vertical locking) ---
+            # Discourage concentrating all curvature in one segment (vertical configuration)
+            # Low variance = robot is vertical; high variance = robot is more horizontal
+            #k_variance = np.var(self.Kappa)
+            #phi_variance = np.var(self.Phi)
+            # Penalize low-variance (vertical) configurations, especially near target
+            #proximity_weight = np.exp(-self.error / 0.02)
+            #orientation_penalty = 0.001 * proximity_weight * (1.0 / (1.0 + k_variance + phi_variance))
+
+            # --- Component 5: Action rate penalty (reduced for fine-tuning) ---
+            # Penalize action MAGNITUDE near target, and action CHANGE everywhere
+            action_mag = np.sum(np.square(u))
+            action_change = np.sum(np.square(u - self.prev_u))
+
+            # Near target: allow small corrections, but discourage large jerky motions
+            proximity_factor = np.exp(-self.error / 0.02)  # ~1 when error<0.02, ~0 when far
+            action_penalty = (0.001 + 0.05 * proximity_factor) * (0.1*action_mag + 10 * action_change)
+
+            # --- Combine: reward = approach + progress + fine-tune - penalties ---
+            reward = -2*distance_cost + 2*progress_reward + 2*fine_tune_reward - action_penalty# - orientation_penalty
+            self.costs = -reward  # for compatibility (reward = -costs later)
 
         elif reward_function == 'step_minus_euclidean_square':
             self.error = ((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2)
@@ -360,18 +396,39 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         # Update previous_error after recalculation
         self.previous_error = self.error
 
-        if reward_function == 'step_minus_euclidean_square':
+        # Update previous action for smoothness penalty (must happen every step!)
+        self.prev_u = u.copy()
+
+        # --- Convergence-based early termination ---
+        if reward_function == 'step_minus_weighted_euclidean':
+            if self.error <= 0.01:
+                done = True
+                #self.convergence_counter += 1
+            else:
+                done = False
+                #self.convergence_counter = 0
+            
+            #done = self.convergence_counter >= self.convergence_patience
+        elif reward_function == 'step_minus_euclidean_square':
             if math.sqrt(self.costs) <= 0.01:
                 done = True
             else:
                 done = False
+            #self.convergence_counter = 0
         else:
             if self.error <= 0.01:
                 done = True
             else:
                 done = False
+            #self.convergence_counter = 0
 
-        if reward_function == 'step_minus_euclidean_square' or reward_function == 'step_minus_weighted_euclidean':
+        # --- Compute final reward ---
+        if reward_function == 'step_minus_weighted_euclidean':
+            reward = -self.costs
+            if done:
+                reward += 100  # big terminal bonus for stable convergence
+            return self._get_obs(), reward, done, {}
+        elif reward_function == 'step_minus_euclidean_square':
             reward = -self.costs
             return self._get_obs(), reward, done, {}
         elif reward_function == 'step_scaled_distance':
@@ -426,7 +483,8 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
 
         self.time = 0
         self.previous_error = initial_distance
-        self.last_u = None
+        self.prev_u = np.zeros(6)  # reset to zero action (not previous episode's last action)
+        self.convergence_counter = 0
         return self._get_obs()
     
     def _get_obs(self):
@@ -492,26 +550,40 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         self.ax.set_zlim([-0.4, 0.4])
 
     
-    def render(self):
-        ani = FuncAnimation(fig = self.fig, func = self.render_update,frames=np.shape(self.position_dic['Section1']['x'])[0], interval = 20)
-        # fig.suptitle('Helix Trajectory Animation', fontsize=14)
-        return ani
+    def render(self, x_pos, y_pos, z_pos):
+        import pyvista as pv
+
+        T1_arr = np.array(FK_pcc([self.Kappa[0]], [self.Phi[0]], [self.l[0]], discrete_points=self.pointNo))
+        T2_arr = np.array(FK_pcc([self.Kappa[0], self.Kappa[1]], [self.Phi[0], self.Phi[1]], [self.l[0], self.l[1]], discrete_points=self.pointNo))
+        T3_arr = np.array(FK_pcc([self.Kappa[0], self.Kappa[1], self.Kappa[2]], [self.Phi[0], self.Phi[1], self.Phi[2]], [self.l[0], self.l[1], self.l[2]], discrete_points=self.pointNo))
         
+        self.polyLines[0].points = T1_arr[:, 0:3, 3]  # Update section 1 points
+        self.polyLines[1].points = T2_arr[:, 0:3, 3]  # Update section 2 points
+        self.polyLines[2].points = T3_arr[:, 0:3, 3]  # Update section 3 points
         
-    def visualization(self, x_pos, y_pos, z_pos):
+        self.tubes[0].copy_from(self.polyLines[0].tube(radius=0.01))  # Update section 1 tube
+        self.tubes[1].copy_from(self.polyLines[1].tube(radius=0.01))  # Update section 2 tube
+        self.tubes[2].copy_from(self.polyLines[2].tube(radius=0.01))  # Update section 3 tube
+
+        self.spheres[2].copy_from(pv.Sphere(radius=0.01, center=np.column_stack((x_pos*self.normalization_factor, y_pos*self.normalization_factor, z_pos*self.normalization_factor))))  # Update tip sphere position
+
+        self.plotter.render()  # Update the plot with new positions
+
+        
+    def visualization(self, x_pos, y_pos, z_pos, animation=False):
         # This function plots the robot trajectory in 3D space
         import pyvista as pv
 
-        pointNo = 50
-        plotter = pv.Plotter()
+        self.pointNo = 50
+        self.plotter = pv.Plotter()
 
         # Start state (using start_kappa and start_phi)
         T_start = FK_pcc(self.start_kappa, self.start_phi, self.l)
         x_start, y_start, z_start = T_start[0, 3], T_start[1, 3], T_start[2, 3]
 
-        T1_arr = np.array(FK_pcc([self.Kappa[0]], [self.Phi[0]], [self.l[0]], discrete_points=pointNo))
-        T2_arr = np.array(FK_pcc([self.Kappa[0], self.Kappa[1]], [self.Phi[0], self.Phi[1]], [self.l[0], self.l[1]], discrete_points=pointNo))
-        T3_arr = np.array(FK_pcc([self.Kappa[0], self.Kappa[1], self.Kappa[2]], [self.Phi[0], self.Phi[1], self.Phi[2]], [self.l[0], self.l[1], self.l[2]], discrete_points=pointNo))
+        T1_arr = np.array(FK_pcc([self.Kappa[0]], [self.Phi[0]], [self.l[0]], discrete_points=self.pointNo))
+        T2_arr = np.array(FK_pcc([self.Kappa[0], self.Kappa[1]], [self.Phi[0], self.Phi[1]], [self.l[0], self.l[1]], discrete_points=self.pointNo))
+        T3_arr = np.array(FK_pcc([self.Kappa[0], self.Kappa[1], self.Kappa[2]], [self.Phi[0], self.Phi[1], self.Phi[2]], [self.l[0], self.l[1], self.l[2]], discrete_points=self.pointNo))
 
         T1_tips = T1_arr[:, 0:3, 3]  # Extract tip positions for section 1
         T2_tips = T2_arr[:, 0:3, 3]  # Extract tip positions for section 2
@@ -528,18 +600,34 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
 
         sphere1 = pv.Sphere(radius=0.01, center=np.column_stack((x_start, y_start, z_start)))
         sphere2 = pv.Sphere(radius=0.01, center=np.column_stack((self.state[3], self.state[4], self.state[5])))
-        sphere3 = pv.Sphere(radius=0.01, center=np.column_stack((x_pos[-1], y_pos[-1], z_pos[-1])))
+        sphere3 = pv.Sphere(radius=0.01, center=np.column_stack((x_pos*self.normalization_factor, y_pos*self.normalization_factor, z_pos*self.normalization_factor)))
 
-        actor1 = plotter.add_mesh(tube1, color='red', name='Section 1')
-        actor2 = plotter.add_mesh(tube2, color='green', name='Section 2')
-        actor3 = plotter.add_mesh(tube3, color='blue', name='Section 3')
+        sphereGrid = pv.Sphere(radius=0.3, theta_resolution=12, phi_resolution=12)
+        hemisphereGrid = sphereGrid.clip(normal='z', origin=(0, 0, 0), invert=False)
 
-        actor4 = plotter.add_mesh(sphere1, color='yellow', name='Initial')
-        actor5 = plotter.add_mesh(sphere2, color='orange', name='Target')
-        actor6 = plotter.add_mesh(sphere3, color='black', name='Actual')
+        actor1 = self.plotter.add_mesh(tube1, color='red', name='Section 1')
+        actor2 = self.plotter.add_mesh(tube2, color='green', name='Section 2')
+        actor3 = self.plotter.add_mesh(tube3, color='blue', name='Section 3')
 
-        plotter.show_grid()
-        plotter.show(auto_close=False)
+        actor3 = self.plotter.add_mesh(sphere1, color='yellow', name='Initial')
+        actor4 = self.plotter.add_mesh(sphere2, color='orange', name='Target')
+        actor5 = self.plotter.add_mesh(sphere3, color='black', name='Actual')
+
+        self.plotter.add_actor(actor1)
+        self.plotter.add_actor(actor2)
+        self.plotter.add_actor(actor3)
+        self.plotter.add_actor(actor4)
+        self.plotter.add_actor(actor5)
+
+        self.plotter.add_mesh(hemisphereGrid, style="wireframe", color="black", opacity=0.2)
+
+        self.polyLines = [polyLine1, polyLine2, polyLine3]
+        self.tubes = [tube1, tube2, tube3]
+        self.spheres = [sphere1, sphere2, sphere3]
+
+        self.plotter.show_grid()
+        self.plotter.show(auto_close=False, interactive_update=animation)
+        return self.plotter
         
         
 # %%

@@ -31,8 +31,8 @@ initial_state = state[0:3]
 x_pos = []
 y_pos = []
 z_pos = []
-normalization_factor = env.l[0] + env.l[1] + env.l[2]
 
+plotter = env.visualization(initial_state[0], initial_state[1], initial_state[2], animation=True)
 for t in range(1000):
     start = time.time()
     action = agent.act(state, add_noise=False)
@@ -43,9 +43,9 @@ for t in range(1000):
     # 'step_distance_based' is du-1 - du
     state, reward, done, _ = env.step(action, reward_function = config['reward']['function'])
     #env.render_calculate()
-    x_pos.append(state[0]*normalization_factor)
-    y_pos.append(state[1]*normalization_factor)
-    z_pos.append(state[2]*normalization_factor)
+    x_pos.append(state[0])
+    y_pos.append(state[1])
+    z_pos.append(state[2])
     #env.render() # uncomment for instant animation
     print("{}th action".format(t))
     print("Goal Position",state[3:6])
@@ -55,12 +55,14 @@ for t in range(1000):
     print("--------------------------------------------------------------------------------")
     stop = time.time()
     env.time += (stop - start)
+    env.render(x_pos[-1], y_pos[-1], z_pos[-1])
     if done:
         print("Target reached in {} seconds".format(env.time))
         break
 
 # Visualization
-env.visualization(x_pos,y_pos,z_pos)
+plotter.show(auto_close=False, interactive_update=False)
+#env.visualization(x_pos[-1], y_pos[-1], z_pos[-1])
 #env.render_calculate()
 #plt.title(f"Initial Position is x: {initial_state[0]} y: {initial_state[1]} z: {initial_state[2]} & Target Position is x: {state[0]} y: {state[1]} z: {state[2]}")
 #plt.xlabel("X [m]")

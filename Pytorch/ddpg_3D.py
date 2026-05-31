@@ -60,7 +60,7 @@ print(f"✓ TAU: {TAU} (should be 1e-3)")
 print(f"✓ WEIGHT_DECAY: {WEIGHT_DECAY} (should be 1e-4)")
 print("="*60 + "\n")
 
-def ddpg(n_episodes=5000, max_t=1000, print_every=30):
+def ddpg(n_episodes=100, max_t=1000, print_every=30):
     """
     Deep Deterministic Policy Gradient Training Loop
 

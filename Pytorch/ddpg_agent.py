@@ -100,7 +100,11 @@ class Agent():
             action = self.actor_local(state).cpu().data.numpy()
         self.actor_local.train()
         if add_noise:
-            action += noise_scale * self.noise.sample()
+            # state[15] is normalized distance-to-goal (distance / 0.3)
+            # Reduce noise near target: full noise when far, 10% noise when very close
+            distance_to_goal = abs(state[15].item() if hasattr(state[15], 'item') else state[15])
+            proximity_damping = np.clip(distance_to_goal / 0.1, 0.1, 1.0)
+            action += noise_scale * proximity_damping * self.noise.sample()
         return np.clip(action, -1, 1)
 
     def reset(self):
