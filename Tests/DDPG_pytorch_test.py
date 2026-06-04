@@ -42,12 +42,7 @@ for t in range(1000):
     start = time.time()
     action = agent.act(state, add_noise=False)
 
-    # 'step_minus_euclidean_square' is e^2
-    # 'step_minus_weighted_euclidean' is 0.7*e
-    # 'step_error_comparison' is -1.00 or -0.50 or 1.00
-    # 'step_distance_based' is du-1 - du
     state, reward, done, _ = env.step(action, reward_function = config['reward']['function'])
-    #env.render_calculate()
     x_pos.append(state[0])
     y_pos.append(state[1])
     z_pos.append(state[2])
@@ -67,7 +62,7 @@ for t in range(1000):
         print("Joint variables at target: Kappas {}, Phis {}".format([env.kappa1,env.kappa2,env.kappa3], [env.phi1,env.phi2,env.phi3]))
         break
 
-# Visualization)
+# Visualization
 plotter.show(auto_close=False, interactive_update=False)
 env.close()
 # %%

@@ -112,7 +112,6 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         self.convergence_patience = 20          # 20 steps × 0.05s = 1s of stability required
         self.position_dic = {'Section1': {'x':[],'y':[],'z':[]}, 'Section2': {'x':[],'y':[],'z':[]}, 'Section3': {'x':[],'y':[],'z':[]}}
         # Define the observation and action space from OpenAI Gym
-        # 6D observation space: [x, y, z, goal_x, goal_y, goal_z]
         high = np.array([0.2, 0.3, 0.3, 0.2, 0.3, 0.3], dtype=np.float32)
         low = np.array([-0.3, -0.15, -0.3, -0.3, -0.15, -0.3], dtype=np.float32)
         # 6D action space: [kappa_dot_1, kappa_dot_2, kappa_dot_3, phi_dot_1, phi_dot_2, phi_dot_3]
@@ -132,27 +131,9 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         self.u = 0
         self.prev_u = 0
 
-        # global variables to be used in the reward function
-        """global new_x
-        global new_y
-        global new_z
-        global new_goal_x
-        global new_goal_y
-        global new_goal_z"""
-
-        new_x, new_y, new_z = 0.0, 0.0, 0.0
-        new_goal_x, new_goal_y, new_goal_z = 0.0, 0.0, 0.0
-
     def step(self, u, reward_function:str = 'step_minus_euclidean_square'):
 
         x, y, z, goal_x, goal_y, goal_z = self.state[0:6] # Get the current 6D Cartesian state
-
-        """global new_x
-        global new_y
-        global new_z
-        global new_goal_x
-        global new_goal_y
-        global new_goal_z"""
 
         dt =  self.dt # Time step
         self.time += dt  # Increment time
@@ -161,104 +142,6 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         u[0:3] = np.clip(u[0:3], -self.kappa_dot_max, self.kappa_dot_max)
         u[3:6] = np.clip(u[3:6], -self.phi_dot_max, self.phi_dot_max)
         self.u = u
-
-        """if reward_function == 'step_error_comparison':
-            self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)+((goal_z-z)**2)) # Calculate 3D distance
-
-            if self.error < self.previous_error:
-                self.costs = 1.00
-            elif self.error == self.previous_error:
-                self.costs = -0.50
-            else:
-                self.costs = -1.0
-
-            # Just to show if the robot is moving along the goal or not
-            if self.error < self.previous_error:
-                #self.costs -= 1
-                # UNCOMMENT HERE !!!!!!!
-                pass
-                # print("=========================POSITIVE MOVE=========================")
-        
-        elif reward_function == 'step_minus_euclidean_square':
-            self.error = ((goal_x-x)**2)+((goal_y-y)**2)+((goal_z-z)**2) # Calculate 3D squared distance
-            self.costs = self.error # Set the cost (reward) to the error squared
-            # Just to show if the robot is moving along the goal or not
-            if self.error < self.previous_error:
-                #self.costs -= 1
-                # UNCOMMENT HERE !!!!!!!
-                pass
-                # print("=========================POSITIVE MOVE=========================")
-
-        # another example reward function
-        #     self.costs = 1 - self.error
-        # elif self.error == self.previous_error:
-        #     self.costs = -0.5 - self.error
-        # else:
-        #     self.costs = -1 - self.error
-            
-        # if self.error < self.previous_error and self.error <= 0.04: # or 0.01
-        #     self.costs = 10 - self.error
-        # elif self.error < self.previous_error and self.error <= 0.05: # or 0.01
-        #     self.costs = 9 - self.error
-        # elif self.error < self.previous_error and self.error <= 0.06: # or 0.01
-        #     self.costs = 8 - self.error
-        # elif self.error < self.previous_error and self.error <= 0.07: # or 0.01
-        #     self.costs = 7 - self.error
-        # elif self.error < self.previous_error and self.error <= 0.08: # or 0.01
-        #     self.costs = 6 - self.error
-        # self.previous_error = self.error
-
-        elif reward_function == 'step_minus_weighted_euclidean':
-
-            self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)+((goal_z-z)**2)) # Calculate 3D distance
-            self.costs = 0.7 * self.error # Set the cost (reward) to the error squared
-            if self.error <= 0.01: # give extra reward if the robot is close to the goal
-                self.costs -= 0.07
-            # Just to show if the robot is moving along the goal or not
-            if self.error < self.previous_error:
-                self.costs -= 0.02
-                # UNCOMMENT HERE !!!!!!!
-                # print("=========================POSITIVE MOVE=========================")
-        
-        elif reward_function == 'step_distance_based':
-
-            self.error = math.sqrt(((goal_x-x)**2)+((goal_y-y)**2)+((goal_z-z)**2)) # Calculate 3D distance
-
-            # Just to show if the robot is moving along the goal or not
-            if self.error < self.previous_error:
-                #self.costs -= 1
-                # UNCOMMENT HERE !!!!!!!
-                pass
-                # print("=========================POSITIVE MOVE=========================")
-            
-            if self.error == self.previous_error:
-                self.costs = -100
-            else:
-                if self.error <= 0.025:
-                    self.costs = 200
-                elif self.error <= 0.05:
-                    self.costs = 150
-                elif self.error <= 0.1:
-                    self.costs = 100
-                else:
-                    self.costs = 1000*(self.previous_error - self.error) # Set the cost (reward) du-1 - du
-        
-        self.previous_error = self.error
-
-        if reward_function == 'step_minus_euclidean_square':
-            # if the error is less than 0.01, the robot is close to the goal and returns done
-            if math.sqrt(self.costs) <= 0.01:
-                #print(f"DONE triggered at step {self.time}: error={math.sqrt(self.costs):.4f}m, state=({new_x:.4f}, {new_y:.4f}, {new_z:.4f}), goal=({new_goal_x:.4f}, {new_goal_y:.4f}, {new_goal_z:.4f})")
-                done = True
-            else:
-                done = False
-        else:
-            # if the error is less than 0.01, the robot is close to the goal and returns done
-            if self.error <= 0.01:
-                #print(f"DONE triggered at step {self.time}: error={self.error:.4f}m, state=({new_x:.4f}, {new_y:.4f}, {new_z:.4f}), goal=({new_goal_x:.4f}, {new_goal_y:.4f}, {new_goal_z:.4f})")
-                done = True
-            else:
-                done = False"""
         
         # Update the joint variables
         self.kappa1 += u[0] * dt
@@ -341,20 +224,6 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
             # Small distance penalty
             reward -= self.error
 
-            # ------------------------------------------------------------------
-            # TIP VELOCITY PENALTY
-            # ------------------------------------------------------------------
-
-            tip_velocity = 0#np.sqrt(
-                #(new_x - self.prev_x)**2 +
-                #(new_y - self.prev_y)**2 +
-                #(new_z - self.prev_z)**2
-            #)
-
-            # Penalize motion only near target
-            near_goal_weight = np.exp(-50.0 * self.error)
-
-            reward -= 2.0 * near_goal_weight * tip_velocity
 
             # ------------------------------------------------------------------
             # ACTION PENALTIES
@@ -367,6 +236,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
             reward -= 0.001 * action_mag
 
             # Smooth actions near target only
+            near_goal_weight = np.exp(-50.0 * self.error)
             reward -= 0.5 * near_goal_weight * action_change
 
             self.costs = -reward
@@ -493,9 +363,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
                                self.phi1, self.phi2, self.phi3, 
                                error_vec[0], error_vec[1], error_vec[2], distance], dtype=np.float32)
 
-        # Debug print
         initial_distance = np.sqrt((goal_x-x)**2 + (goal_y-y)**2 + (goal_z-z)**2)
-        #print(f"RESET: Initial pos=({x:.4f}, {y:.4f}, {z:.4f}), Target=({goal_x:.4f}, {goal_y:.4f}, {goal_z:.4f}), Distance={initial_distance:.4f}m")
 
         self.time = 0
         self.previous_error = initial_distance
@@ -522,10 +390,6 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         tip1 = T1[0:3, 3]
         tip2 = T2[0:3, 3]
         tip3 = T3[0:3, 3]
-        
-        # Extract 3D trajectory points (in practice, FK_pcc gives only tip, so we'd need intermediate points)
-        # For now, store the tip position
-        #x_tip, y_tip, z_tip = T[0, 3], T[1, 3], T[2, 3]
 
         self.position_dic['Section1']['x'].append(T1[0, 3])
         self.position_dic['Section1']['y'].append(T1[1, 3])
@@ -546,7 +410,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         self.ax = self.fig.add_subplot(111, projection='3d')
 
 
-    def render_update(self, i):
+    def render_update(self, i): #The update logic was moved to the render method
         self.ax.cla()
         # Plot the 3D trunk with three sections
         self.ax.plot([0], [0], [0], 'ko', markersize=5)
@@ -586,7 +450,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         self.plotter.render()  # Update the plot with new positions
 
         
-    def visualization(self, x_pos, y_pos, z_pos, animation=False):
+    def visualization(self, x_pos, y_pos, z_pos, animation=False): #Initial visualization setup and enable animation
         # This function plots the robot trajectory in 3D space
         import pyvista as pv
 

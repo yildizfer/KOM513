@@ -3,10 +3,6 @@ PyTorch Neural Network Architectures for DDPG
 
 Actor: Maps states -> deterministic actions
 Critic: Maps (state, action) -> Q-value (state-action value)
-
-3D Version:
-- Actor input: 6D state, output: 6D action
-- Critic input: 6D state + 6D action, output: scalar Q-value
 """
 
 import numpy as np

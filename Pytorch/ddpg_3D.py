@@ -4,15 +4,6 @@ PyTorch DDPG Implementation for 3D Continuum Robot Control
 DDPG (Deep Deterministic Policy Gradient) is an actor-critic algorithm that:
 1. Actor network: learns deterministic policy π(s) -> a
 2. Critic network: learns value function Q(s, a) -> scalar value
-
-Key differences from TensorFlow/Keras version:
-- More flexible model definition
-- Better for custom architectures and debugging
-- Automatic differentiation with PyTorch's autograd
-
-3D Changes:
-- State size: 6 (x, y, z, goal_x, goal_y, goal_z)
-- Action size: 6 (κ̇₁, κ̇₂, κ̇₃, φ̇₁, φ̇₂, φ̇₃)
 """
 
 import sys
