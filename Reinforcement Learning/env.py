@@ -324,45 +324,52 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         if reward_function == 'step_minus_weighted_euclidean':
             self.error = math.sqrt(((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2))
 
-            # --- Component 1: Distance cost (smooth bounded curve) ---
-            # Use smooth sigmoid-like curve to avoid extreme values and create consistent gradients
-            distance_cost = 1.0 - np.exp(-8.0 * self.error)  # bounded to [0, 1]
 
-            # --- Component 2: Progress reward (direct gradient) ---
-            # Reward getting closer - no normalization to preserve gradient strength
-            progress = self.previous_error - self.error  # positive = good
-            progress_reward = 3.0 * progress
+            # Progress toward target
+            progress = self.previous_error - self.error
 
-            # --- Component 3: Fine-tuning zone bonus (smooth transitions) ---
-            # Gradually reward being close, avoiding sharp exponential cliffs that cause jitter
-            if self.error < 0.01:  # within 10mm - very close
-                fine_tune_reward = 2
-            elif self.error < 0.02:  # within 20mm - close enough
-                fine_tune_reward = 0.5
-            else:
-                fine_tune_reward = 0.0
+            # ------------------------------------------------------------------
+            # DISTANCE + PROGRESS
+            # ------------------------------------------------------------------
 
-            # --- Component 4: Orientation penalty (prevent vertical locking) ---
-            # Discourage concentrating all curvature in one segment (vertical configuration)
-            # Low variance = robot is vertical; high variance = robot is more horizontal
-            #k_variance = np.var(self.Kappa)
-            #phi_variance = np.var(self.Phi)
-            # Penalize low-variance (vertical) configurations, especially near target
-            #proximity_weight = np.exp(-self.error / 0.02)
-            #orientation_penalty = 0.001 * proximity_weight * (1.0 / (1.0 + k_variance + phi_variance))
+            # Stronger progress reward than before
+            reward = 20.0 * progress
 
-            # --- Component 5: Action rate penalty (reduced for fine-tuning) ---
-            # Penalize action MAGNITUDE near target, and action CHANGE everywhere
+            # Smooth attraction toward target
+            reward += 5.0 * np.exp(-50.0 * self.error)
+
+            # Small distance penalty
+            reward -= self.error
+
+            # ------------------------------------------------------------------
+            # TIP VELOCITY PENALTY
+            # ------------------------------------------------------------------
+
+            tip_velocity = 0#np.sqrt(
+                #(new_x - self.prev_x)**2 +
+                #(new_y - self.prev_y)**2 +
+                #(new_z - self.prev_z)**2
+            #)
+
+            # Penalize motion only near target
+            near_goal_weight = np.exp(-50.0 * self.error)
+
+            reward -= 2.0 * near_goal_weight * tip_velocity
+
+            # ------------------------------------------------------------------
+            # ACTION PENALTIES
+            # ------------------------------------------------------------------
+
             action_mag = np.sum(np.square(u))
             action_change = np.sum(np.square(u - self.prev_u))
 
-            # Near target: allow small corrections, but discourage large jerky motions
-            proximity_factor = np.exp(-self.error / 0.02)  # ~1 when error<0.02, ~0 when far
-            action_penalty = (0.001 + 0.05 * proximity_factor) * (0.1*action_mag + 10 * action_change)
+            # Very small energy penalty
+            reward -= 0.001 * action_mag
 
-            # --- Combine: reward = approach + progress + fine-tune - penalties ---
-            reward = -2*distance_cost + 2*progress_reward + 2*fine_tune_reward - action_penalty# - orientation_penalty
-            self.costs = -reward  # for compatibility (reward = -costs later)
+            # Smooth actions near target only
+            reward -= 0.5 * near_goal_weight * action_change
+
+            self.costs = -reward
 
         elif reward_function == 'step_minus_euclidean_square':
             self.error = ((new_goal_x-new_x)**2)+((new_goal_y-new_y)**2)+((new_goal_z-new_z)**2)
@@ -401,12 +408,17 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
 
         # --- Convergence-based early termination ---
         if reward_function == 'step_minus_weighted_euclidean':
-            if self.error <= 0.01:
-                done = True
-                #self.convergence_counter += 1
+
+            if self.error <= self.convergence_threshold:
+                self.costs -= 5
+                self.convergence_counter += 1
+                if self.convergence_counter >= self.convergence_patience:
+                    done = True
+                else:
+                    done = False
             else:
                 done = False
-                #self.convergence_counter = 0
+                self.convergence_counter = 0
             
             #done = self.convergence_counter >= self.convergence_patience
         elif reward_function == 'step_minus_euclidean_square':
@@ -426,7 +438,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         if reward_function == 'step_minus_weighted_euclidean':
             reward = -self.costs
             if done:
-                reward += 100  # big terminal bonus for stable convergence
+                reward += 500*(1 + 1/self.time)  # big terminal bonus for stable convergence
             return self._get_obs(), reward, done, {}
         elif reward_function == 'step_minus_euclidean_square':
             reward = -self.costs
@@ -438,7 +450,7 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
             reward = self.costs
             return self._get_obs(), reward, done, {}
    
-    def reset(self):
+    def reset(self, target=None):
         # Random state of the robot
         # (Random curvatures and angles are given so that forward kinematics generates random starting position)
         self.kappa1 = np.random.uniform(low=-4, high=16)
@@ -458,16 +470,20 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         T3_cc = FK_pcc(self.Kappa, self.Phi, self.l) # Generate the position of the tip of the robot
         x, y, z = T3_cc[0, 3], T3_cc[1, 3], T3_cc[2, 3]  # Extract the x, y, z coordinates of the tip
 
-        # Random target point
-        target_k1 = np.random.uniform(low=-4, high=16)
-        target_k2 = np.random.uniform(low=-4, high=16)
-        target_k3 = np.random.uniform(low=-4, high=16)
-        target_p1 = np.random.uniform(low=-np.pi, high=np.pi)
-        target_p2 = np.random.uniform(low=-np.pi, high=np.pi)
-        target_p3 = np.random.uniform(low=-np.pi, high=np.pi)
 
-        T3_target = FK_pcc([target_k1, target_k2, target_k3], [target_p1, target_p2, target_p3], self.l)
-        goal_x, goal_y, goal_z = T3_target[0, 3], T3_target[1, 3], T3_target[2, 3]
+        if target:
+            goal_x, goal_y, goal_z = target
+        else:
+            # Random target point
+            target_k1 = np.random.uniform(low=-4, high=16)
+            target_k2 = np.random.uniform(low=-4, high=16)
+            target_k3 = np.random.uniform(low=-4, high=16)
+            target_p1 = np.random.uniform(low=-np.pi, high=np.pi)
+            target_p2 = np.random.uniform(low=-np.pi, high=np.pi)
+            target_p3 = np.random.uniform(low=-np.pi, high=np.pi)
+
+            T3_target = FK_pcc([target_k1, target_k2, target_k3], [target_p1, target_p2, target_p3], self.l)
+            goal_x, goal_y, goal_z = T3_target[0, 3], T3_target[1, 3], T3_target[2, 3]
         
         error_vec = [goal_x - x, goal_y - y, goal_z - z]
         distance = np.linalg.norm(error_vec)
@@ -598,9 +614,9 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         tube2 = polyLine2.tube(radius=0.01)
         tube3 = polyLine3.tube(radius=0.01)
 
-        sphere1 = pv.Sphere(radius=0.01, center=np.column_stack((x_start, y_start, z_start)))
-        sphere2 = pv.Sphere(radius=0.01, center=np.column_stack((self.state[3], self.state[4], self.state[5])))
-        sphere3 = pv.Sphere(radius=0.01, center=np.column_stack((x_pos*self.normalization_factor, y_pos*self.normalization_factor, z_pos*self.normalization_factor)))
+        sphere1 = pv.Sphere(radius=0.01, center=np.column_stack((x_start, y_start, z_start))) #Initial tip position
+        sphere2 = pv.Sphere(radius=0.01, center=np.column_stack((self.state[3], self.state[4], self.state[5]))) #Target tip position
+        sphere3 = pv.Sphere(radius=0.01, center=np.column_stack((x_pos*self.normalization_factor, y_pos*self.normalization_factor, z_pos*self.normalization_factor))) #Actual tip position (updated in render_update)
 
         sphereGrid = pv.Sphere(radius=0.3, theta_resolution=12, phi_resolution=12)
         hemisphereGrid = sphereGrid.clip(normal='z', origin=(0, 0, 0), invert=False)
@@ -609,15 +625,16 @@ class continuumEnv(gym.Env): #TODO: Change it to 'ContinuumEnv' to follow standa
         actor2 = self.plotter.add_mesh(tube2, color='green', name='Section 2')
         actor3 = self.plotter.add_mesh(tube3, color='blue', name='Section 3')
 
-        actor3 = self.plotter.add_mesh(sphere1, color='yellow', name='Initial')
-        actor4 = self.plotter.add_mesh(sphere2, color='orange', name='Target')
-        actor5 = self.plotter.add_mesh(sphere3, color='black', name='Actual')
+        actor4 = self.plotter.add_mesh(sphere1, color='yellow', name='Initial')
+        actor5 = self.plotter.add_mesh(sphere2, color='orange', name='Target')
+        actor6 = self.plotter.add_mesh(sphere3, color='black', name='Actual')
 
         self.plotter.add_actor(actor1)
         self.plotter.add_actor(actor2)
         self.plotter.add_actor(actor3)
         self.plotter.add_actor(actor4)
         self.plotter.add_actor(actor5)
+        self.plotter.add_actor(actor6)
 
         self.plotter.add_mesh(hemisphereGrid, style="wireframe", color="black", opacity=0.2)
 

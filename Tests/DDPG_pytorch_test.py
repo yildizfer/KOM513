@@ -25,14 +25,19 @@ agent.actor_local.load_state_dict(torch.load(f"./RL-based-Control-of-a-Soft-Cont
 agent.critic_local.load_state_dict(torch.load(f"./RL-based-Control-of-a-Soft-Continuum-Robot/Pytorch/experiment/checkpoint_critic.pth",map_location=torch.device('cpu')))
 
 state = env.reset() # generate random starting point for the robot and random target point.
+#state = env.reset(target=[0.1, 0.1, 0.2]) # uncomment to set a specific target point (x, y, z)
+
 env.start_kappa = [env.kappa1, env.kappa2, env.kappa3] # save starting kappas
+env.start_phi = [env.phi1, env.phi2, env.phi3] # save starting phis
 #env.render_init()
-initial_state = state[0:3]
+initial_state = state[0:3]*env.normalization_factor
+
 x_pos = []
 y_pos = []
 z_pos = []
 
-plotter = env.visualization(initial_state[0], initial_state[1], initial_state[2], animation=True)
+plotter = env.visualization(initial_state[0]/env.normalization_factor, initial_state[1]/env.normalization_factor, initial_state[2]/env.normalization_factor, animation=True)
+#time.sleep(7.5) #Pause to start recording
 for t in range(1000):
     start = time.time()
     action = agent.act(state, add_noise=False)
@@ -48,7 +53,7 @@ for t in range(1000):
     z_pos.append(state[2])
     #env.render() # uncomment for instant animation
     print("{}th action".format(t))
-    print("Goal Position",state[3:6])
+    #print("Goal Position",state[3:6]*env.normalization_factor)
     # print("Error: {0}, Current State: {1}".format(math.sqrt(-1*reward), state)) # for step_2
     print("Action: {0},  Kappas {1}, Phis {2}".format(action, [env.kappa1,env.kappa2,env.kappa3], [env.phi1,env.phi2,env.phi3]))
     print("Episodic Reward is {}".format(reward))
@@ -58,17 +63,11 @@ for t in range(1000):
     env.render(x_pos[-1], y_pos[-1], z_pos[-1])
     if done:
         print("Target reached in {} seconds".format(env.time))
+        print("Initial position: {}, Target position: {}".format(initial_state, state[3:6]*env.normalization_factor))
+        print("Joint variables at target: Kappas {}, Phis {}".format([env.kappa1,env.kappa2,env.kappa3], [env.phi1,env.phi2,env.phi3]))
         break
 
-# Visualization
+# Visualization)
 plotter.show(auto_close=False, interactive_update=False)
-#env.visualization(x_pos[-1], y_pos[-1], z_pos[-1])
-#env.render_calculate()
-#plt.title(f"Initial Position is x: {initial_state[0]} y: {initial_state[1]} z: {initial_state[2]} & Target Position is x: {state[0]} y: {state[1]} z: {state[2]}")
-#plt.xlabel("X [m]")
-#plt.ylabel("Y [m]")
-#plt.zlabel("Z [m]")
-#plt.show()
-#input("Press Enter to close the environment...")
 env.close()
 # %%

@@ -49,18 +49,7 @@ env = continuumEnv()
 # Action size: 6 (3 curvature rates + 3 bending angle rates)
 agent = Agent(state_size=16, action_size=6, random_seed=10)
 
-# DEBUG: Verify fixes are loaded
-print("\n" + "="*60)
-print("DIAGNOSTICS - Verifying Phase 1 Fixes")
-print("="*60)
-from ddpg_agent import LR_ACTOR, LR_CRITIC, TAU, WEIGHT_DECAY
-print(f"✓ LR_ACTOR: {LR_ACTOR} (should be 1e-3)")
-print(f"✓ LR_CRITIC: {LR_CRITIC} (should be 1e-2)")
-print(f"✓ TAU: {TAU} (should be 1e-3)")
-print(f"✓ WEIGHT_DECAY: {WEIGHT_DECAY} (should be 1e-4)")
-print("="*60 + "\n")
-
-def ddpg(n_episodes=100, max_t=1000, print_every=30):
+def ddpg(n_episodes=6000, max_t=1000, print_every=100):
     """
     Deep Deterministic Policy Gradient Training Loop
 
